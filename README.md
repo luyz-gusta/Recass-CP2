@@ -163,7 +163,33 @@ Usuários de demonstração criados pelo `.http` (todos com a senha `EXPENSEHUB_
 
 ## Reembolsos (I04–I06)
 
-A completar nas issues correspondentes.
+### Criar e editar rascunho (I04)
+
+| Rota | Quem acessa | Resultado |
+|---|---|---|
+| `POST /api/expenses` | `Employee` | `201` com o reembolso em `Draft` e `Location: /api/expenses/{id}`. Dados inválidos → `400`; sem a role Employee → `403` |
+| `PUT /api/expenses/{id}` | `Employee`, somente o proprietário | `200` com o reembolso atualizado. Dados inválidos → `400`; sem a role Employee → `403`; inexistente **ou de outra pessoa** → `404`; fora de `Draft` → `409` |
+
+Corpo de `POST` e de `PUT` (os dois têm exatamente os mesmos quatro campos, todos obrigatórios):
+
+| Campo | Regra |
+|---|---|
+| `description` | texto de 10 a 500 caracteres |
+| `amount` | número entre `0.01` e `2147483647`, com ponto decimal (`decimal` no servidor, 2 casas na persistência) |
+| `expenseDate` | data `yyyy-MM-dd`, nunca futura (a comparação usa o dia UTC do servidor) |
+| `categoryId` | identificador de uma categoria existente (1 a 5, veja a tabela de categorias acima) |
+
+```json
+{ "description": "Almoço com cliente em São Paulo", "amount": 150.50, "expenseDate": "2026-09-15", "categoryId": 1 }
+```
+
+- **Sem mass assignment:** proprietário, estado, identificador, ator e horários **nunca** vêm do cliente. O proprietário é o usuário do token; o estado inicial é `Draft`; o `id` e os horários são do servidor. Qualquer campo fora dos quatro acima (`ownerId`, `status`, `createdAtUtc`...) é rejeitado com `400`. Campo ausente também é `400`: o servidor não transforma um valor faltante em `0` em silêncio.
+- **Ordem das verificações** (a mesma em todos os serviços): role (`403`) → entrada, como data futura e categoria inexistente (`400`) → escopo, só o proprietário (`404`) → estado (`409`) → persistência.
+- **Edição:** o `PUT` substitui os quatro campos de um reembolso em `Draft` do próprio usuário. Reembolso de outra pessoa responde `404`, sem revelar que existe, mesmo para quem acumula roles (por exemplo, `Approver` + `Employee`). Depois de enviado, o reembolso não pode mais ser editado (`409`).
+- **Histórico:** a criação grava a ação `Created` (sem estado anterior, novo estado `Draft`) e cada edição que muda algo grava `Updated` (`Draft` → `Draft`), com o texto das alterações no formato `campo: antigo -> novo; ...`, por exemplo `amount: 150.50 -> 210.00; description: ... -> ...`. Reenviar os mesmos dados responde `200` sem histórico novo e sem mexer em `updatedAtUtc`. Reembolso e histórico são gravados juntos, num único `SaveChanges`.
+- **Concorrência:** cada alteração renova o `ConcurrencyStamp`. Se outra operação alterar o mesmo reembolso antes da gravação, a resposta é `409`.
+
+Envio, listagem e consulta (I05) e a matriz de acesso (I06) serão documentados nas issues correspondentes.
 
 ## Aprovação, pagamento e histórico (I07–I08)
 
