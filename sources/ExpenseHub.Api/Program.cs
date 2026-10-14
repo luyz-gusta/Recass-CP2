@@ -2,6 +2,7 @@ using System;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using ExpenseHub.Api.Data;
+using ExpenseHub.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -35,6 +36,8 @@ internal static class Program
             options.UseSqlite(builder.Configuration.GetConnectionString("ExpenseHub")));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IExpenseRepository, ExpenseRepository>();
+        builder.Services.AddScoped<IAccountService, AccountService>();
+        builder.Services.AddScoped<IUserAdminService, UserAdminService>();
 
         builder.Services
             .AddIdentityCore<IdentityUser>(options =>
@@ -43,7 +46,8 @@ internal static class Program
             })
             .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<ExpenseHubDbContext>()
-            .AddSignInManager();
+            .AddSignInManager()
+            .AddErrorDescriber<PortugueseIdentityErrorDescriber>();
 
         // Token bearer nativo do Identity: não depende de chave de assinatura configurada.
         builder.Services

@@ -31,6 +31,7 @@ Content-Type: application/json
 }
 
 ### Usuário autenticado e roles do token → 200 com roles ["Admin"]
+# @name meAdmin
 GET {{baseUrl}}/api/me
 Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
 
@@ -68,3 +69,281 @@ GET {{baseUrl}}/api/me
 ### Rota protegida com token inválido → 401
 GET {{baseUrl}}/api/me
 Authorization: Bearer token-invalido
+
+# ============================================================
+# I03 — Cadastro HTTP e gerenciamento de roles
+# ============================================================
+# Usuários de demonstração (todos com {{demoPassword}}). O cadastro nunca recebe roles:
+# o Admin atribui depois e cada usuário faz login de novo para receber as roles no token.
+
+### Cadastro público → 201 sem roles
+# @name registerFuncionario1
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "funcionario1@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Cadastro → 201
+# @name registerFuncionario2
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "funcionario2@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Cadastro → 201
+# @name registerAprovador
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "aprovador@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Cadastro → 201
+# @name registerFinanceiro
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "financeiro@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Cadastro → 201
+# @name registerAuditor
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "auditor@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Cadastro → 201 (receberá Approver + Employee)
+# @name registerAprovadorFuncionario
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "aprovador.funcionario@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Cadastro → 201 (receberá Finance + Employee)
+# @name registerFinanceiroFuncionario
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "financeiro.funcionario@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Cadastro tentando escolher a role → 400 (campo desconhecido)
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "intruso@expensehub.local",
+  "password": "{{demoPassword}}",
+  "roles": ["Admin"]
+}
+
+### E-mail já cadastrado → 409
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "funcionario1@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Senha fora da política do Identity → 400 (mensagens em português)
+POST {{baseUrl}}/register
+Content-Type: application/json
+
+{
+  "email": "senha.fraca@expensehub.local",
+  "password": "abcdefgh"
+}
+
+### Login de usuário ainda sem roles
+# @name loginSemRole
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "funcionario1@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Listar usuários sem token → 401
+GET {{baseUrl}}/api/admin/users
+
+### Listar usuários com usuário sem role → 403
+GET {{baseUrl}}/api/admin/users
+Authorization: Bearer {{loginSemRole.response.body.$.accessToken}}
+
+### Admin lista usuários e roles → 200
+GET {{baseUrl}}/api/admin/users
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Admin atribui Employee → 200
+PUT {{baseUrl}}/api/admin/users/{{registerFuncionario1.response.body.$.id}}/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Employee"] }
+
+### Admin atribui Employee → 200
+PUT {{baseUrl}}/api/admin/users/{{registerFuncionario2.response.body.$.id}}/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Employee"] }
+
+### Admin atribui Approver → 200
+PUT {{baseUrl}}/api/admin/users/{{registerAprovador.response.body.$.id}}/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Approver"] }
+
+### Admin atribui Finance → 200
+PUT {{baseUrl}}/api/admin/users/{{registerFinanceiro.response.body.$.id}}/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Finance"] }
+
+### Admin atribui Auditor → 200
+PUT {{baseUrl}}/api/admin/users/{{registerAuditor.response.body.$.id}}/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Auditor"] }
+
+### Admin atribui Approver + Employee → 200
+PUT {{baseUrl}}/api/admin/users/{{registerAprovadorFuncionario.response.body.$.id}}/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Approver", "Employee"] }
+
+### Admin atribui Finance + Employee → 200
+PUT {{baseUrl}}/api/admin/users/{{registerFinanceiroFuncionario.response.body.$.id}}/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Finance", "Employee"] }
+
+### Role desconhecida → 400 (roles nunca são criadas implicitamente)
+PUT {{baseUrl}}/api/admin/users/{{registerFuncionario1.response.body.$.id}}/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Employee", "Root"] }
+
+### Usuário inexistente → 404
+PUT {{baseUrl}}/api/admin/users/00000000-0000-0000-0000-000000000000/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Employee"] }
+
+### Admin removendo a própria role Admin → 409
+PUT {{baseUrl}}/api/admin/users/{{meAdmin.response.body.$.id}}/roles
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "roles": ["Employee"] }
+
+### Token antigo continua sem roles: é preciso fazer login de novo → 200 com roles []
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{loginSemRole.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Logins por perfil (execute depois de atribuir as roles).
+# As seções de reembolsos reutilizam estes nomes.
+# ------------------------------------------------------------
+
+### Login Employee (funcionario1)
+# @name loginFuncionario1
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "funcionario1@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Login Employee (funcionario2)
+# @name loginFuncionario2
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "funcionario2@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Login Approver
+# @name loginAprovador
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "aprovador@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Login Finance
+# @name loginFinanceiro
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "financeiro@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Login Auditor
+# @name loginAuditor
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "auditor@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Login Approver + Employee
+# @name loginAprovadorFuncionario
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "aprovador.funcionario@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Login Finance + Employee
+# @name loginFinanceiroFuncionario
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "financeiro.funcionario@expensehub.local",
+  "password": "{{demoPassword}}"
+}
+
+### Após novo login, o token traz a role atribuída → 200 com roles ["Employee"]
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
