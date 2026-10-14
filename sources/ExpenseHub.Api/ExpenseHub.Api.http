@@ -1364,3 +1364,214 @@ Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
 ### Outro Approver aprova o reembolso do Approver + Employee → 200 (só o dono fica impedido)
 POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/approve
 Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+# ============================================================
+# I08 — Pagamento e histórico
+# ============================================================
+# Execute depois das seções I03 a I07, com o banco zerado. Primeiro o fluxo completo: o funcionário cria,
+# edita e envia; o aprovador aprova; o financeiro paga; o auditor lê o histórico. Depois, o histórico da
+# reprovação feita na I07 e os casos negativos. Quem pagou e quando vêm do token e do servidor.
+# Os resultados observados estão em docs/EVIDENCIAS-AUTORIZACAO.md.
+
+# ------------------------------------------------------------
+# Fluxo completo: Draft → Submitted → Approved → Paid
+# ------------------------------------------------------------
+
+### funcionario1 cria o reembolso → 201 (Draft; histórico Created)
+# @name fluxoCompleto
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Jantar com o time do projeto Atlas",
+  "amount": 89.90,
+  "expenseDate": "2026-09-25",
+  "categoryId": 1
+}
+
+### funcionario1 edita o rascunho → 200 (histórico Updated com as alterações de valor e descrição)
+PUT {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Jantar com o time do projeto Atlas, com gorjeta",
+  "amount": 98.90,
+  "expenseDate": "2026-09-25",
+  "categoryId": 1
+}
+
+### funcionario1 envia → 200 (Submitted; histórico Submitted)
+POST {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/submit
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### financeiro tenta pagar antes da aprovação → 409 (só Approved é pago)
+POST {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/pay
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### aprovador aprova → 200 (Approved; histórico Approved)
+POST {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### financeiro paga → 200 (Paid; paidById = financeiro; paidAtUtc do servidor; histórico Paid)
+POST {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/pay
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Pagar de novo → 409 (um reembolso nunca é pago duas vezes; sem pagamento nem histórico duplicados)
+POST {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/pay
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Aprovar um reembolso pago → 409 (Paid é final)
+POST {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Reprovar um reembolso pago → 409
+POST {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "Tentativa de reprovar depois do pagamento" }
+
+### auditor lê o histórico → 200 (Created, Updated, Submitted, Approved e Paid, em ordem cronológica)
+GET {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/history
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+### funcionario1 (dono) lê o histórico → 200
+GET {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/history
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### financeiro lê o histórico de um Paid → 200 (Finance vê Approved e Paid)
+GET {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/history
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### aprovador lê o histórico de um Paid → 404 (Approver só vê Submitted)
+GET {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/history
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### funcionario2 lê o histórico de funcionario1 → 404 (Employee só vê os próprios)
+GET {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/history
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### Listagem do Finance → 200 com os Approved e os Paid
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Histórico: visibilidade e casos negativos
+# ------------------------------------------------------------
+
+### aprovador lê o histórico de um Submitted → 200
+GET {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}/history
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### financeiro lê o histórico de um Submitted → 404 (fora do escopo do Finance)
+GET {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}/history
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### aprovador lê o histórico do rascunho de funcionario2 → 404 (não enxerga rascunhos de outras pessoas)
+GET {{baseUrl}}/api/expenses/{{criarReembolsoFuncionario2.response.body.$.id}}/history
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### auditor lê o histórico da reprovação feita na I07 → 200 (Created, Submitted e Rejected com a justificativa)
+GET {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/history
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+### funcionario2 (dono) lê o histórico do reembolso reprovado → 200
+GET {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/history
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### Admin lê o histórico → 403 (Admin não recebe acesso funcional)
+GET {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/history
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Usuário sem nenhuma role lê o histórico → 403
+GET {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/history
+Authorization: Bearer {{loginSemRole.response.body.$.accessToken}}
+
+### Histórico sem token → 401
+GET {{baseUrl}}/api/expenses/{{fluxoCompleto.response.body.$.id}}/history
+
+### Histórico de reembolso inexistente → 404 (mesma resposta de um reembolso fora do escopo)
+GET {{baseUrl}}/api/expenses/00000000-0000-0000-0000-000000000000/history
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Pagamento: ownership, estado, roles e escopo
+# ------------------------------------------------------------
+
+### Dados da I08: Finance + Employee cria o PRÓPRIO reembolso → 201
+# @name pagamentoDoFinanceiroFuncionario
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Curso de atualização em contabilidade",
+  "amount": 350.00,
+  "expenseDate": "2026-09-18",
+  "categoryId": 5
+}
+
+### Dados da I08: Finance + Employee envia o próprio reembolso → 200 (Submitted)
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/submit
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+
+### Dados da I08: aprovador aprova o reembolso do Finance + Employee → 200 (Approved)
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Finance + Employee paga o PRÓPRIO reembolso → 403 (autopagamento proibido, mesmo acumulando roles)
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/pay
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+
+### Approver tenta pagar → 403
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/pay
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Employee tenta pagar → 403
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/pay
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### Auditor tenta pagar → 403 (Auditor consulta, mas não altera)
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/pay
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+### Admin tenta pagar → 403
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/pay
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Usuário sem nenhuma role tenta pagar → 403
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/pay
+Authorization: Bearer {{loginSemRole.response.body.$.accessToken}}
+
+### Pagar sem token → 401
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/pay
+
+### Outro Finance paga o reembolso do Finance + Employee → 200 (só o dono fica impedido)
+POST {{baseUrl}}/api/expenses/{{pagamentoDoFinanceiroFuncionario.response.body.$.id}}/pay
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Finance + Employee paga o reembolso aprovado de OUTRA pessoa → 200 (a role acumulada vale para os outros)
+POST {{baseUrl}}/api/expenses/{{decisaoParaAprovadorFuncionario.response.body.$.id}}/pay
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+
+### Pagar um Submitted → 409 (só Approved é pago)
+POST {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}/pay
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Pagar o reembolso reprovado na I07 → 409 (Rejected é final)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/pay
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Pagar o rascunho de funcionario2 → 404 (o Finance não enxerga rascunhos de outras pessoas)
+POST {{baseUrl}}/api/expenses/{{criarReembolsoFuncionario2.response.body.$.id}}/pay
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Pagar reembolso inexistente → 404
+POST {{baseUrl}}/api/expenses/00000000-0000-0000-0000-000000000000/pay
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Identificador que não é GUID → 404
+POST {{baseUrl}}/api/expenses/abc/pay
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}

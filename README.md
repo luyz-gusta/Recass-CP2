@@ -275,7 +275,41 @@ Ordem das verificações: role (`403`) → justificativa (`400`) → escopo (`40
 
 ### Pagamento e histórico (I08)
 
-A completar na I08.
+| Rota | Quem acessa | Resultado |
+|---|---|---|
+| `POST /api/expenses/{id}/pay` | `Finance`, exceto o proprietário | `200` com o reembolso em `Paid`, `paidById` e `paidAtUtc`. Sem a role Finance → `403`; o próprio reembolso → `403`; inexistente ou rascunho de outra pessoa → `404`; fora de `Approved` → `409` |
+| `GET /api/expenses/{id}/history` | `Employee`, `Approver`, `Finance` ou `Auditor` | `200` com o histórico em ordem cronológica. Admin sozinho ou sem role → `403`; inexistente **ou fora do escopo de leitura** → `404` |
+
+- **Transição:** só `Approved` é pago (`Approved` → `Paid`), e `Paid` é final. Pagar de novo, pagar um `Submitted` ou pagar um `Rejected` responde `409`, sem pagamento e sem histórico.
+- **Registro de pagamento:** o pagamento é simulado, sem integração bancária. O `PaymentRecord` (1:1 com o reembolso) guarda o valor do reembolso, quem pagou (do token) e quando (relógio do servidor). A rota não tem corpo: nada disso vem do cliente.
+- **Quem paga:** só quem tem a role `Finance` e **não é o dono**. Quem acumula `Finance` + `Employee` paga os reembolsos dos outros, mas recebe `403` no próprio (autopagamento proibido). Employee, Approver, Auditor e Admin recebem `403`.
+- **Atomicidade:** a mudança de estado, o `PaymentRecord` e o histórico `Paid` entram no mesmo `SaveChangesAsync`, numa única transação: ou os três são gravados, ou nenhum, então estado, pagamento e histórico nunca divergem. Dois pagamentos simultâneos do mesmo reembolso não geram pagamento duplicado: o `ConcurrencyStamp` faz um deles responder `409`. Num teste manual com 12 pagamentos paralelos do mesmo reembolso, a API respondeu um `200` e onze `409`, e gravou um único `PaymentRecord` e um único histórico `Paid`.
+- **Histórico:** cada ação aceita grava uma entrada com a ação, o reembolso, o ator, o horário UTC e os estados anterior e posterior, na mesma operação lógica da alteração. Tentativas recusadas (`400`, `403`, `404`, `409`) não geram histórico.
+
+  | Ação | Estado anterior → posterior | Ator | Detalhe |
+  |---|---|---|---|
+  | `Created` | (nenhum) → `Draft` | dono | |
+  | `Updated` | `Draft` → `Draft` | dono | `changes`, no formato `campo: antigo -> novo; ...` |
+  | `Submitted` | `Draft` → `Submitted` | dono | |
+  | `Approved` | `Submitted` → `Approved` | aprovador | |
+  | `Rejected` | `Submitted` → `Rejected` | aprovador | `justification` |
+  | `Paid` | `Approved` → `Paid` | financeiro | |
+
+- **Consulta do histórico:** tem a mesma visibilidade do detalhe, com `ReadScope` aplicado na consulta: o dono vê o histórico dos próprios reembolsos, o Approver o dos `Submitted`, o Finance o dos `Approved` e `Paid` e o Auditor o de todos. Fora do escopo → `404`, igual a um reembolso inexistente.
+
+Histórico de um reembolso que passou pelo fluxo completo (ids encurtados):
+
+```json
+[
+  { "id": 26, "action": "Created", "actorId": "<funcionario1>", "occurredAtUtc": "2026-10-14T21:21:37.7679396Z", "previousStatus": null, "newStatus": "Draft", "justification": null, "changes": null },
+  { "id": 27, "action": "Updated", "actorId": "<funcionario1>", "occurredAtUtc": "2026-10-14T21:21:37.7766263Z", "previousStatus": "Draft", "newStatus": "Draft", "justification": null, "changes": "description: Jantar com o time do projeto Atlas -> Jantar com o time do projeto Atlas, com gorjeta; amount: 89.90 -> 98.90" },
+  { "id": 28, "action": "Submitted", "actorId": "<funcionario1>", "occurredAtUtc": "2026-10-14T21:21:37.7835565Z", "previousStatus": "Draft", "newStatus": "Submitted", "justification": null, "changes": null },
+  { "id": 29, "action": "Approved", "actorId": "<aprovador>", "occurredAtUtc": "2026-10-14T21:21:37.8083199Z", "previousStatus": "Submitted", "newStatus": "Approved", "justification": null, "changes": null },
+  { "id": 30, "action": "Paid", "actorId": "<financeiro>", "occurredAtUtc": "2026-10-14T21:21:37.8186185Z", "previousStatus": "Approved", "newStatus": "Paid", "justification": null, "changes": null }
+]
+```
+
+Ordem das verificações no pagamento: role (`403`) → escopo (`404`) → ownership (`403`) → estado (`409`) → persistência. As requisições do fluxo completo, do fluxo de reprovação e dos casos negativos estão na seção "I08 — Pagamento e histórico" do `.http`, e os status observados em [docs/EVIDENCIAS-AUTORIZACAO.md](docs/EVIDENCIAS-AUTORIZACAO.md).
 
 ## Testes (I09)
 
