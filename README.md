@@ -8,11 +8,13 @@ Enunciado, issues e rubrica: [Racass/checkpoint-csharpracass-expensehub](https:/
 
 ## Equipe e divisão
 
-| Integrante | Issues |
-|---|---|
-| Luiz Gustavo da Silva ([@luyz-gusta](https://github.com/luyz-gusta)) | I01 Fundação e EF Core · I02 Identity, Admin e autenticação · I03 Cadastro e roles · I10 Qualidade (auditoria final) |
-| Pessoa 2 | I04 Criar e editar rascunho · I05 Enviar, listar e consultar · I06 Ownership e matriz de acesso |
-| Pessoa 3 | I07 Aprovar e reprovar · I08 Pagamento e histórico · I09 Testes unitários |
+| Integrante | Issues | Pull requests |
+|---|---|---|
+| Luiz Gustavo da Silva ([@luyz-gusta](https://github.com/luyz-gusta)) | I01 Fundação e EF Core · I02 Identity, Admin e autenticação · I03 Cadastro e roles · I10 Qualidade de código | [#1](https://github.com/luyz-gusta/Recass-CP2/pull/1), [#2](https://github.com/luyz-gusta/Recass-CP2/pull/2), [#3](https://github.com/luyz-gusta/Recass-CP2/pull/3) e o PR da I10 |
+| Rafael Duarte ([@RafaelDuarteF](https://github.com/RafaelDuarteF)) | I04 Criar e editar rascunho · I05 Enviar, listar e consultar · I06 Ownership e matriz de acesso | [#4](https://github.com/luyz-gusta/Recass-CP2/pull/4), [#5](https://github.com/luyz-gusta/Recass-CP2/pull/5), [#6](https://github.com/luyz-gusta/Recass-CP2/pull/6) |
+| Guilherme Oliveira Santana de Almeida ([@aGuiOliveira](https://github.com/aGuiOliveira)) | I07 Aprovar e reprovar · I08 Pagamento e histórico · I09 Testes unitários | [#7](https://github.com/luyz-gusta/Recass-CP2/pull/7), [#8](https://github.com/luyz-gusta/Recass-CP2/pull/8), [#9](https://github.com/luyz-gusta/Recass-CP2/pull/9) |
+
+Cada issue foi implementada numa branch própria e entrou na `main` por pull request com merge commit, preservando a autoria de cada commit. Cada PR cita a issue do repositório original (`Racass/checkpoint-csharpracass-expensehub#N`), descreve as decisões e as evidências e passou pelo workflow `code-quality`.
 
 ## Pré-requisitos
 
@@ -85,6 +87,39 @@ sources/
 ```
 
 Toda resposta de erro segue `ProblemDetails`. Campos desconhecidos no JSON (por exemplo `ownerId`, `status` ou `roles`) são rejeitados com `400`, o que impede mass assignment.
+
+## Mapa da API
+
+| Método e rota | Roles | Sucesso | Erros específicos |
+|---|---|---|---|
+| `GET /health` | público | `200` | — |
+| `POST /register` | público | `201` (usuário sem roles) | `400` dados inválidos ou campo extra; `409` e-mail já cadastrado |
+| `POST /login` | público | `200` (token bearer) | `400` corpo inválido; `401` credencial inválida |
+| `GET /api/me` | autenticado | `200` (id, e-mail e roles do token) | — |
+| `GET /api/admin/users` | Admin | `200` | — |
+| `PUT /api/admin/users/{id}/roles` | Admin | `200` | `400` role desconhecida; `404` usuário inexistente; `409` Admin removendo a própria role Admin |
+| `POST /api/expenses` | Employee | `201` (`Draft`) | `400` dados inválidos |
+| `PUT /api/expenses/{id}` | Employee, só o dono | `200` | `400`; `404` inexistente ou de outra pessoa; `409` fora de `Draft` |
+| `GET /api/expenses` | Employee, Approver, Finance, Auditor | `200` (filtrado pelo perfil) | — |
+| `GET /api/expenses/{id}` | Employee, Approver, Finance, Auditor | `200` | `404` inexistente ou fora do escopo |
+| `POST /api/expenses/{id}/submit` | Employee, só o dono | `200` (`Submitted`) | `404`; `409` fora de `Draft` ou repetido |
+| `POST /api/expenses/{id}/approve` | Approver, exceto o dono | `200` (`Approved`) | `403` próprio reembolso; `404`; `409` fora de `Submitted` |
+| `POST /api/expenses/{id}/reject` | Approver, exceto o dono | `200` (`Rejected`) | `400` justificativa; `403` próprio reembolso; `404`; `409` fora de `Submitted` |
+| `POST /api/expenses/{id}/pay` | Finance, exceto o dono | `200` (`Paid`) | `403` próprio reembolso; `404`; `409` fora de `Approved` |
+| `GET /api/expenses/{id}/history` | Employee, Approver, Finance, Auditor | `200` (ordem cronológica) | `404` inexistente ou fora do escopo |
+
+Em toda rota protegida: sem token ou com token inválido → `401`; autenticado sem a role da rota → `403`. Roles acumuladas somam permissões, mas ninguém aprova ou paga o próprio reembolso.
+
+**Ordem de decisão em todos os serviços:**
+
+1. role (`403`);
+2. entrada (`400`);
+3. escopo (`404`, sem revelar se o recurso existe);
+4. ownership (`403`, autoaprovação e autopagamento);
+5. estado (`409`, transição inválida ou repetida, sem histórico);
+6. persistência: estado, histórico e pagamento num único `SaveChanges`.
+
+O detalhamento de cada regra está nas seções abaixo e em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 ## Autenticação (I02)
 
@@ -366,4 +401,46 @@ A mutação 5 também revelou um teste fraco: os testes de domínio calculavam o
 
 ## Qualidade (I10)
 
-O workflow `code-quality` roda a cada push e publica o relatório como artefato. O mesmo script pode ser executado localmente com `pwsh ./scripts/Invoke-CodeQuality.ps1`. Score final a registrar na I10.
+O workflow `code-quality` roda a cada push e a cada pull request, e publica o relatório como artefato `code-quality-report`. O mesmo script roda localmente com `pwsh ./scripts/Invoke-CodeQuality.ps1` (exige PowerShell 7 e Gitleaks).
+
+**Resultado: 100/100**, sem nenhum finding (build, segurança, higiene, estilo e boas práticas com 20/20 cada). Esse foi o resultado em todos os PRs da I01 à I09 e na `main` final. A configuração de qualidade do template (`.editorconfig`, `Directory.Build.props`, workflow e scripts) não foi alterada.
+
+| Verificação | Resultado |
+|---|---|
+| `dotnet build` | 0 erros e 0 warnings (compilador, analisadores .NET e regras de estilo) |
+| `dotnet format --verify-no-changes --severity warn` | sem alterações pendentes nos dois projetos |
+| `dotnet test` | 404 casos de teste aprovados |
+| Gitleaks (histórico inteiro do repositório) | nenhum segredo encontrado |
+| Arquivos gerados (`bin/`, `obj/`, `*.db`, `.env`) | nenhum versionado |
+| `dotnet-ef migrations has-pending-model-changes` | modelo em sincronia com as migrations |
+
+**Validação ponta a ponta.** Na auditoria da I10, a API foi executada a partir da `main`, com o banco zerado, e passou por 55 verificações HTTP, todas com o status esperado:
+
+- cadastro e roles dos 7 perfis;
+- fluxo completo `Created → Updated → Submitted → Approved → Paid`, com o histórico lido pelo Auditor;
+- reprovação com justificativa;
+- `401` e `403` (sem token, sem role, Admin sem acesso funcional, Auditor escrevendo, autoaprovação e autopagamento);
+- `404` (reembolso de outro Employee, id trocado na URL, rascunho alheio, fora do escopo);
+- `409` (reenvio, nova decisão, pagamento repetido, pagar `Rejected` ou `Submitted`);
+- `400` (valor 0, data futura, descrição curta, categoria inexistente, `ownerId` ou `status` no corpo).
+
+## Decisões e concessões
+
+- **SQLite** como provider: não exige servidor e mantém o build e os testes independentes de banco. Como o SQLite não ordena `DateTimeOffset`, os horários são `DateTime` em UTC, com um conversor que garante `Kind = Utc`.
+- **Token bearer nativo do Identity** em vez de JWT: não há chave de assinatura para proteger. Em troca, as roles valem a partir do próximo login.
+- **Senha do Admin fora do repositório** (user-secrets ou variável de ambiente). O seed cria só as roles e o Admin, e é idempotente.
+- **Autorização em duas camadas:** atributo de role no controller e decisão contextual (role, ownership e estado) em `ExpenseAccessPolicy`, na camada de serviço. A visibilidade de leitura é uma expressão aplicada na consulta SQL.
+- **`404` para o que o usuário não enxerga:** reembolso inexistente e fora do escopo respondem igual, sem vazar a existência do recurso. **`403`** fica para falta de role e para autoaprovação/autopagamento.
+- **Campo desconhecido no JSON gera `400`:** proprietário, estado, atores e horários nunca vêm do cliente.
+- **Atomicidade e concorrência:** cada operação grava estado, histórico e pagamento num único `SaveChanges`, e o `ConcurrencyStamp` transforma alterações simultâneas em `409`.
+- **Testes unitários sem banco:** os serviços dependem de `IExpenseRepository` e de `TimeProvider`, substituídos por dublês em memória e por um relógio fixo.
+- **Fora do escopo,** conforme o enunciado: deploy, Docker, anexos, integração bancária, múltiplas moedas, aprovação multinível, notificações, reabertura, cancelamento e frontend.
+
+## Uso de Inteligência Artificial
+
+O grupo usou o **Claude Code** como assistente de desenvolvimento, conforme permitido no enunciado e em [docs/USO-DE-IA.md](docs/USO-DE-IA.md):
+
+- **Escopo:** apoio na implementação, nos testes e na documentação de cada issue.
+- **Revisão humana:** cada integrante revisou o código das próprias issues antes do merge e respondeu pelas decisões técnicas.
+- **Validação:** o comportamento foi confirmado com testes unitários, com o relatório de qualidade de cada PR e com requisições à API em execução, registradas nos PRs e em [docs/EVIDENCIAS-AUTORIZACAO.md](docs/EVIDENCIAS-AUTORIZACAO.md).
+- **Segredos:** nenhuma credencial ou dado pessoal foi incluído no repositório nem nos prompts.

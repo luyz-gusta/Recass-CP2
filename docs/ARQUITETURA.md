@@ -28,7 +28,8 @@ sources/ExpenseHub.Api/
   Domain/        entidades, enums e AppRoles
   Data/          ExpenseHubDbContext, Configurations/, Migrations/, IExpenseRepository, ExpenseRepository,
                  ConcurrencyConflictException, UtcDateTimeConverter, DatabaseInitializer
-  Services/      Actor, ServiceError, ServiceResult, ExpenseAccessPolicy e serviços (interface + implementação)
+  Services/      Actor, ServiceError, ServiceResult, ExpenseAccessPolicy/AccessDecision, mappers e serviços
+                 (IAccountService, IUserAdminService, IExpenseService, IExpenseWorkflowService + implementações)
   Http/          ClaimsPrincipalExtensions (ToActor) e ControllerResultExtensions (ToActionResult)
 sources/ExpenseHub.UnitTests/
   TestDoubles/   InMemoryExpenseRepository, FixedTimeProvider, TestActors
@@ -179,6 +180,10 @@ Respostas:
 - `TestDoubles/InMemoryExpenseRepository`: inclusões ficam pendentes até `SaveChangesAsync`, que as confirma juntas. `FailNextSave` e `ConflictOnNextSave` simulam falha de persistência e conflito de concorrência (as pendências são descartadas). `Seed(expense)` grava direto como confirmado. `SaveChangesCount` conta as chamadas. Os escopos são aplicados como expressões, como no banco.
 - `TestDoubles/FixedTimeProvider`: relógio fixo (01/10/2026 12:00 UTC por padrão), com `Advance(...)`.
 - `TestDoubles/TestActors`: `Employee1`, `Employee2`, `Approver`, `ApproverEmployee`, `Finance`, `FinanceEmployee`, `Auditor`, `Admin`, `NoRole`.
+- `TestDoubles/TestExpenses` e `TestDoubles/ExpenseScenario`:
+  - `TestExpenses` cria rascunhos válidos;
+  - `ExpenseScenario` leva um reembolso a qualquer estado pelas transições reais do domínio, por exemplo `ExpenseScenario.Of(TestActors.Employee1).At(clock.UtcNow).Approved()`, sem reflexão.
+- `TestDoubles/DtoValidator` executa as DataAnnotations dos DTOs. `TestDoubles/ApiJson` reproduz as opções de JSON da API (camelCase, enums como texto e campo desconhecido rejeitado).
 - Nomes `Metodo_Cenario_ResultadoEsperado`, uma regra por teste, verificando o resultado e os efeitos colaterais (histórico, pagamento, `SaveChangesCount`).
 - Senhas de teste nunca são literais atribuídos a identificadores como `Password`, `Senha`, `Token` ou `Secret`. Use `string.Empty` ou `new string('x', 12)`; o scanner do CI trata o literal como segredo versionado.
 
