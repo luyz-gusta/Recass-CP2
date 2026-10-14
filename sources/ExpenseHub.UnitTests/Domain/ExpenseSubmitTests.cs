@@ -75,7 +75,7 @@ public sealed class ExpenseSubmitTests
     [DataRow(ExpenseStatus.Paid)]
     public void Submit_NotDraft_Throws(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft("employee-1", _createdAt), status);
+        Expense expense = ExpenseScenario.Of("employee-1").At(_createdAt).InStatus(status);
 
         Assert.ThrowsExactly<InvalidOperationException>(() => expense.Submit(_submittedAt));
     }

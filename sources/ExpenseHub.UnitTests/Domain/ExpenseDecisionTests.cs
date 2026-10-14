@@ -67,12 +67,13 @@ public sealed class ExpenseDecisionTests
     [DataRow(ExpenseStatus.Paid)]
     public void Approve_NotSubmitted_ThrowsAndKeepsStatus(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft(OwnerId, _createdAt), status);
+        Expense expense = ExpenseScenario.Of(OwnerId).At(_createdAt).InStatus(status);
+        string? previousDecider = expense.DecidedById;
 
-        Assert.ThrowsExactly<InvalidOperationException>(() => expense.Approve(ApproverId, _decidedAt));
+        Assert.ThrowsExactly<InvalidOperationException>(() => expense.Approve("approver-2", _decidedAt));
 
         Assert.AreEqual(status, expense.Status);
-        Assert.IsNull(expense.DecidedById);
+        Assert.AreEqual(previousDecider, expense.DecidedById);
     }
 
     /// <summary>O aprovador é obrigatório: sem identificador não há decisão.</summary>
@@ -185,12 +186,13 @@ public sealed class ExpenseDecisionTests
     [DataRow(ExpenseStatus.Paid)]
     public void Reject_NotSubmitted_ThrowsAndKeepsStatus(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft(OwnerId, _createdAt), status);
+        Expense expense = ExpenseScenario.Of(OwnerId).At(_createdAt).InStatus(status);
+        string? previousReason = expense.RejectionReason;
 
         Assert.ThrowsExactly<InvalidOperationException>(() => expense.Reject(ApproverId, ValidJustification, _decidedAt));
 
         Assert.AreEqual(status, expense.Status);
-        Assert.IsNull(expense.RejectionReason);
+        Assert.AreEqual(previousReason, expense.RejectionReason);
     }
 
     /// <summary>Rejected é final: depois de reprovado, o reembolso não pode ser aprovado.</summary>
@@ -208,9 +210,7 @@ public sealed class ExpenseDecisionTests
 
     private static Expense SubmittedExpense()
     {
-        Expense expense = TestExpenses.Draft(OwnerId, _createdAt);
-        expense.Submit(_submittedAt);
-        return expense;
+        return ExpenseScenario.Of(OwnerId).At(_submittedAt).Submitted();
     }
 
     private static void AssertStillUndecided(Expense expense)
