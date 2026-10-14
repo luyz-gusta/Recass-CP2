@@ -16,22 +16,13 @@ internal static class TestExpenses
 
     public static DateOnly ValidDate { get; } = new(2026, 9, 30);
 
-    /// <summary>Cria um rascunho válido do proprietário informado, criado em <paramref name="createdAtUtc"/> (padrão: 01/10/2026 12:00 UTC).</summary>
+    /// <summary>
+    /// Cria um rascunho válido do proprietário informado, criado em <paramref name="createdAtUtc"/> (padrão: 01/10/2026 12:00 UTC).
+    /// Para os demais estados, use <see cref="ExpenseScenario"/>, que passa pelas transições reais do domínio.
+    /// </summary>
     public static Expense Draft(string ownerId, DateTime? createdAtUtc = null)
     {
         DateTime now = createdAtUtc ?? new FixedTimeProvider().UtcNow;
         return Expense.CreateDraft(ownerId, ValidCategoryId, ValidDescription, ValidAmount, ValidDate, now);
-    }
-
-    /// <summary>
-    /// Força o estado de um reembolso no arrange, sem passar pelas transições do domínio.
-    /// Serve para montar situações que só existem depois de várias etapas (por exemplo, um reembolso já aprovado).
-    /// </summary>
-    public static Expense InStatus(Expense expense, ExpenseStatus status)
-    {
-        ArgumentNullException.ThrowIfNull(expense);
-
-        typeof(Expense).GetProperty(nameof(Expense.Status))!.SetValue(expense, status);
-        return expense;
     }
 }

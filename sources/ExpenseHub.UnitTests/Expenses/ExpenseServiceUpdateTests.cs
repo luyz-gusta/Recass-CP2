@@ -32,7 +32,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_OwnerChangesDraft_AppliesNewData()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.Employee1, draft.Id, ChangedRequest(), CancellationToken.None);
 
@@ -47,7 +47,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_OwnerChangesDraft_KeepsOwnerAndStatusAndTouchesUpdatedAt()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         DateTime createdAt = draft.CreatedAtUtc;
         _clock.Advance(TimeSpan.FromHours(2));
 
@@ -63,7 +63,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_OwnerChangesDraft_RecordsUpdatedHistoryWithChangesInSingleSave()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         _clock.Advance(TimeSpan.FromHours(2));
 
         await _service.UpdateAsync(TestActors.Employee1, draft.Id, ChangedRequest(), CancellationToken.None);
@@ -84,7 +84,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_SameData_SucceedsWithoutHistoryOrSave()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         _clock.Advance(TimeSpan.FromHours(2));
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.Employee1, draft.Id, SameDataRequest(), CancellationToken.None);
@@ -99,7 +99,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_AnotherEmployeesDraft_ReturnsNotFoundAndKeepsDraft()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.Employee2, draft.Id, ChangedRequest(), CancellationToken.None);
 
@@ -112,7 +112,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_ApproverEmployeeOnAnotherDraft_ReturnsNotFound()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.ApproverEmployee, draft.Id, ChangedRequest(), CancellationToken.None);
 
@@ -138,7 +138,7 @@ public sealed class ExpenseServiceUpdateTests
     [DataRow(AppRoles.Admin)]
     public async Task UpdateAsync_ActorWithoutEmployeeRole_ReturnsForbidden(string role)
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         Actor actor = TestActors.Create("user-without-employee", role);
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(actor, draft.Id, ChangedRequest(), CancellationToken.None);
@@ -152,7 +152,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_ActorWithNoRole_ReturnsForbidden()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.NoRole, draft.Id, ChangedRequest(), CancellationToken.None);
 
@@ -168,7 +168,7 @@ public sealed class ExpenseServiceUpdateTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task UpdateAsync_ExpenseNotInDraft_ReturnsConflictAndKeepsData(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(SeedDraft(TestActors.Employee1), status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.Employee1, expense.Id, ChangedRequest(), CancellationToken.None);
 
@@ -181,7 +181,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_FutureDate_ReturnsValidationOnExpenseDate()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         UpdateExpenseRequest request = RequestWith(expenseDate: _clock.Today.AddDays(1));
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.Employee1, draft.Id, request, CancellationToken.None);
@@ -196,7 +196,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_UnknownCategory_ReturnsValidationOnCategoryId()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         UpdateExpenseRequest request = RequestWith(categoryId: 99);
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.Employee1, draft.Id, request, CancellationToken.None);
@@ -210,7 +210,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_InvalidDataOnAnotherEmployeesDraft_ReturnsValidationBeforeScope()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         UpdateExpenseRequest request = RequestWith(categoryId: 99);
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.Employee2, draft.Id, request, CancellationToken.None);
@@ -222,7 +222,7 @@ public sealed class ExpenseServiceUpdateTests
     [TestMethod]
     public async Task UpdateAsync_ConcurrencyConflictOnSave_ReturnsConflictWithoutHistory()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         _repository.ConflictOnNextSave = true;
 
         ServiceResult<ExpenseResponse> result = await _service.UpdateAsync(TestActors.Employee1, draft.Id, ChangedRequest(), CancellationToken.None);
@@ -256,11 +256,9 @@ public sealed class ExpenseServiceUpdateTests
         };
     }
 
-    private Expense SeedDraft(Actor owner)
+    private Expense Seed(Actor owner, ExpenseStatus status)
     {
-        Expense draft = TestExpenses.Draft(owner.UserId, _clock.UtcNow);
-        _repository.Seed(draft);
-        return draft;
+        return _repository.Seed(ExpenseScenario.Of(owner).At(_clock.UtcNow).InStatus(status));
     }
 
     private void AssertNothingSaved()

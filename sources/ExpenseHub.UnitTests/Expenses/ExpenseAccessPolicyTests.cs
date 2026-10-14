@@ -224,7 +224,7 @@ public sealed class ExpenseAccessPolicyTests
 
     /// <summary>A role que decide não é a que paga: Approver não paga e Finance não aprova, mesmo sobre reembolso alheio.</summary>
     [TestMethod]
-    public void CanDecideAndCanPay_EachRoleOnlyDoesItsOwnJob()
+    public void CanDecideAndCanPay_SingleRoleOnOthersExpense_AllowsOnlyItsOwnTransition()
     {
         Assert.AreEqual(AccessDecision.Forbidden, ExpenseAccessPolicy.CanPay(TestActors.Approver, OtherOwnerId, ExpenseStatus.Approved));
         Assert.AreEqual(AccessDecision.Forbidden, ExpenseAccessPolicy.CanDecide(TestActors.Finance, OtherOwnerId, ExpenseStatus.Submitted));

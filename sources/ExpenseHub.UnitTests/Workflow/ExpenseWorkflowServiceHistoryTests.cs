@@ -111,7 +111,7 @@ public sealed class ExpenseWorkflowServiceHistoryTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task GetHistoryAsync_Owner_SeesOwnHistoryInAnyStatus(ExpenseStatus status)
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> result = await _service.GetHistoryAsync(TestActors.Employee1, expense.Id, CancellationToken.None);
 
@@ -125,7 +125,7 @@ public sealed class ExpenseWorkflowServiceHistoryTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task GetHistoryAsync_AnotherEmployee_ReturnsNotFound(ExpenseStatus status)
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> result = await _service.GetHistoryAsync(TestActors.Employee2, expense.Id, CancellationToken.None);
 
@@ -136,7 +136,7 @@ public sealed class ExpenseWorkflowServiceHistoryTests
     [TestMethod]
     public async Task GetHistoryAsync_ApproverOnSubmitted_SeesHistory()
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, ExpenseStatus.Submitted);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> result = await _service.GetHistoryAsync(TestActors.Approver, expense.Id, CancellationToken.None);
 
@@ -151,7 +151,7 @@ public sealed class ExpenseWorkflowServiceHistoryTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task GetHistoryAsync_ApproverOutsideSubmitted_ReturnsNotFound(ExpenseStatus status)
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> result = await _service.GetHistoryAsync(TestActors.Approver, expense.Id, CancellationToken.None);
 
@@ -164,7 +164,7 @@ public sealed class ExpenseWorkflowServiceHistoryTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task GetHistoryAsync_FinanceOnApprovedOrPaid_SeesHistory(ExpenseStatus status)
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> result = await _service.GetHistoryAsync(TestActors.Finance, expense.Id, CancellationToken.None);
 
@@ -178,7 +178,7 @@ public sealed class ExpenseWorkflowServiceHistoryTests
     [DataRow(ExpenseStatus.Rejected)]
     public async Task GetHistoryAsync_FinanceOutsideApprovedOrPaid_ReturnsNotFound(ExpenseStatus status)
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> result = await _service.GetHistoryAsync(TestActors.Finance, expense.Id, CancellationToken.None);
 
@@ -194,7 +194,7 @@ public sealed class ExpenseWorkflowServiceHistoryTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task GetHistoryAsync_Auditor_SeesAnyHistory(ExpenseStatus status)
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> result = await _service.GetHistoryAsync(TestActors.Auditor, expense.Id, CancellationToken.None);
 
@@ -207,7 +207,7 @@ public sealed class ExpenseWorkflowServiceHistoryTests
     [DataRow(null)]
     public async Task GetHistoryAsync_ActorWithoutReadRole_ReturnsForbidden(string? role)
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, ExpenseStatus.Submitted);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         Actor actor = role is null ? TestActors.NoRole : TestActors.Create("user-without-read-role", role);
 
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> result = await _service.GetHistoryAsync(actor, expense.Id, CancellationToken.None);
@@ -219,7 +219,7 @@ public sealed class ExpenseWorkflowServiceHistoryTests
     [TestMethod]
     public async Task GetHistoryAsync_MissingAndInvisible_AreIndistinguishable()
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, ExpenseStatus.Draft);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> invisible = await _service.GetHistoryAsync(TestActors.Employee2, expense.Id, CancellationToken.None);
         ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> missing = await _service.GetHistoryAsync(TestActors.Employee2, Guid.NewGuid(), CancellationToken.None);
@@ -286,31 +286,8 @@ public sealed class ExpenseWorkflowServiceHistoryTests
         return result.Value!;
     }
 
-    /// <summary>Leva um reembolso até o estado pedido pelas transições reais do domínio e o grava como confirmado.</summary>
-    private Expense SeedInStatus(Actor owner, ExpenseStatus status)
+    private Expense Seed(Actor owner, ExpenseStatus status)
     {
-        Expense expense = TestExpenses.Draft(owner.UserId, _clock.UtcNow);
-
-        if (status != ExpenseStatus.Draft)
-        {
-            expense.Submit(_clock.UtcNow);
-        }
-
-        if (status == ExpenseStatus.Rejected)
-        {
-            expense.Reject(TestActors.Approver.UserId, Justification, _clock.UtcNow);
-        }
-        else if (status is ExpenseStatus.Approved or ExpenseStatus.Paid)
-        {
-            expense.Approve(TestActors.Approver.UserId, _clock.UtcNow);
-        }
-
-        if (status == ExpenseStatus.Paid)
-        {
-            expense.MarkAsPaid(TestActors.Finance.UserId, _clock.UtcNow);
-        }
-
-        _repository.Seed(expense);
-        return expense;
+        return _repository.Seed(ExpenseScenario.Of(owner).At(_clock.UtcNow).InStatus(status));
     }
 }

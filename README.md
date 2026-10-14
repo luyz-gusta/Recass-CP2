@@ -313,13 +313,56 @@ Ordem das verificações no pagamento: role (`403`) → escopo (`404`) → owner
 
 ## Testes (I09)
 
-Testes unitários com MSTest, sem banco, rede ou serviço externo: os serviços dependem de `IExpenseRepository` e de `TimeProvider`, substituídos nos testes por `InMemoryExpenseRepository` e `FixedTimeProvider`.
+Testes unitários com MSTest 4, **sem banco, rede, arquivo ou serviço externo** e sem `Thread.Sleep`. Os serviços dependem só de `IExpenseRepository` e de `TimeProvider`; nos testes, eles são substituídos por `InMemoryExpenseRepository` e `FixedTimeProvider`, um relógio fixo em 01/10/2026 12:00 UTC. Cada teste monta o próprio cenário, então a suíte roda em paralelo, método a método (`MSTestSettings.cs`).
 
 ```shell
 dotnet test ./sources/ExpenseHub.slnx
 ```
 
-Detalhamento da cobertura a completar na I09.
+São 257 métodos de teste (404 casos, contando os `DataRow`), organizados por área:
+
+| Pasta | O que cobre |
+|---|---|
+| `Domain/` | regras do `Expense`: cada transição válida (criar, editar, enviar, aprovar, reprovar e pagar) e todas as inválidas, além dos registros de histórico e de pagamento |
+| `Expenses/` | `ExpenseService` (criar, editar, enviar, listar e consultar), `ExpenseAccessPolicy` (role × dono × estado) e `ReadScope` (visibilidade por perfil, estado a estado) |
+| `Workflow/` | `ExpenseWorkflowService`: aprovar, reprovar, pagar e consultar o histórico, com ownership, estado, atomicidade e concorrência |
+| `Validation/` | DataAnnotations dos DTOs (limites e campos obrigatórios) e recusa de campos que o cliente não pode enviar |
+| `Http/` | `[Authorize(Roles = ...)]` e rotas dos controllers, tradução de `ServiceResult` para HTTP e montagem do `Actor` a partir das claims |
+| `Identity/` | seed do Admin, política de troca de roles e tradução de erros do Identity |
+| `TestDoubles/` | `InMemoryExpenseRepository`, `FixedTimeProvider`, `TestActors`, `ExpenseScenario`, `TestExpenses`, `DtoValidator` e `ApiJson` |
+
+- **`ExpenseScenario`** monta reembolsos em qualquer estado pelas transições reais do domínio, sem reflexão: `ExpenseScenario.Of(TestActors.Employee1).At(clock.UtcNow).Approved()`. Um reembolso `Paid` tem aprovação e pagamento de verdade.
+- **`InMemoryExpenseRepository`** imita a unidade de trabalho do EF Core: inclusões ficam pendentes até o `SaveChangesAsync`, que confirma tudo junto. `FailNextSave` e `ConflictOnNextSave` simulam falha de gravação e conflito de concorrência, descartando as pendências, e os escopos são aplicados como expressões, como no banco.
+- **Padrão:** nomes `Metodo_Cenario_ResultadoEsperado`, Arrange/Act/Assert e uma regra por teste, verificando o resultado **e** os efeitos colaterais (histórico, pagamento, `SaveChangesCount`).
+
+| Área (issue #9) | Principais testes |
+|---|---|
+| Estados e transições | `ExpenseDraftTests`, `ExpenseSubmitTests`, `ExpenseDecisionTests` e `ExpensePaymentTests`; nos serviços, `409` sem histórico para transição inválida ou repetida |
+| Ownership e negações | `ExpenseAccessPolicyTests`, `ExpenseReadScopeTests` e os testes de serviço: isolamento entre Employees, autoaprovação, autopagamento, roles acumuladas, Admin sem acesso funcional, `403` × `404` |
+| Aprovação, reprovação, justificativa e pagamento | `ExpenseWorkflowServiceApproveTests`, `ExpenseWorkflowServiceRejectTests`, `ExpenseWorkflowServicePayTests` e `RejectExpenseRequestValidationTests` |
+| Histórico e validações | `ExpenseWorkflowServiceHistoryTests` (fluxo completo em ordem cronológica, `changes`, `justification` e visibilidade), `ExpenseRequestValidationTests` e os testes de histórico de cada serviço |
+| Isolamento e regressão | sem banco, rede ou arquivo, com relógio fixo e em paralelo; evidência de mutação abaixo |
+
+### Evidência de regressão (mutação manual)
+
+Para cada regra abaixo, a regra foi quebrada no código, a suíte rodou, os testes que falharam foram anotados e a mudança foi desfeita com `git checkout`. Nada disso foi commitado, e o `git status` ficou limpo depois de cada mutação. **Todas as 12 mutações derrubaram ao menos um teste**, e a suíte completa voltou a passar no fim.
+
+| # | Regra quebrada | Mudança no código | Testes que falharam |
+|---:|---|---|---:|
+| 1 | Isolamento entre Employees (leitura) | `ReadScope`: o Employee vê todos os reembolsos | 12 |
+| 2 | Isolamento entre Employees (editar e enviar) | `CanManageDraft` não compara o ator com o dono | 6 |
+| 3 | Autoaprovação proibida | o serviço de decisão ignora o `Forbidden` de `CanDecide` | 2 |
+| 4 | Autopagamento proibido | `PayAsync` ignora o `Forbidden` de `CanPay` | 2 |
+| 5 | Justificativa mínima de 10 caracteres | o mínimo cai para 1 | 5 |
+| 6 | Justificativa máxima de 500 caracteres | o máximo sobe para 5000 | 2 |
+| 7 | Transição repetida → `409` sem histórico duplicado | serviço e domínio deixam de exigir `Submitted` para aprovar | 9 |
+| 8 | Filtro do Finance (só `Approved` e `Paid`) | o Finance vê tudo que não é rascunho | 5 |
+| 9 | Filtro do Approver (só `Submitted`) | o Approver vê tudo que não é rascunho | 4 |
+| 10 | Atomicidade de pagamento e histórico | pagamento e histórico em dois `SaveChanges` | 3 |
+| 11 | Admin sem acesso funcional | `HasReadRole` aceita Admin | 5 |
+| 12 | Quem pagou vem do token | o dono do reembolso vira quem pagou | 4 |
+
+A mutação 5 também revelou um teste fraco: os testes de domínio calculavam os limites da justificativa a partir da própria constante (`RejectionReasonMinLength - 1`), então baixar a constante não os derrubava. Eles passaram a usar os valores do contrato (10, 500, 9 e 501), e a mesma mutação agora derruba também o teste de domínio. O autopagamento, que era pego por um único teste, ganhou o caso Employee + Approver + Finance no próprio reembolso.
 
 ## Qualidade (I10)
 

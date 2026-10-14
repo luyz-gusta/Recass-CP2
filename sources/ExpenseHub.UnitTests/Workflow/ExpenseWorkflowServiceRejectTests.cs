@@ -34,7 +34,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_OthersSubmitted_RejectsWithDeciderAndServerTime()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         _clock.Advance(TimeSpan.FromHours(5));
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Approver, expense.Id, Request(Justification), CancellationToken.None);
@@ -53,7 +53,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_OthersSubmitted_PersistsJustificationInExpenseAndHistoryInSingleSave()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         await _service.RejectAsync(TestActors.Approver, expense.Id, Request("  " + Justification + "   "), CancellationToken.None);
 
@@ -74,7 +74,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [DataRow(500)]
     public async Task RejectAsync_JustificationAtLengthLimit_Rejects(int length)
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Approver, expense.Id, Request(new string('j', length)), CancellationToken.None);
 
@@ -89,7 +89,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [DataRow("            ")]
     public async Task RejectAsync_BlankJustification_ReturnsValidationWithoutSaving(string? justification)
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Approver, expense.Id, Request(justification!), CancellationToken.None);
 
@@ -102,7 +102,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [DataRow(501)]
     public async Task RejectAsync_JustificationOutOfLength_ReturnsValidationWithoutSaving(int length)
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Approver, expense.Id, Request(new string('j', length)), CancellationToken.None);
 
@@ -113,7 +113,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_JustificationShortAfterTrim_ReturnsValidationWithoutSaving()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Approver, expense.Id, Request("    123456789    "), CancellationToken.None);
 
@@ -133,7 +133,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_ActorWithoutApproverRoleAndInvalidJustification_ReturnsForbidden()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Employee2, expense.Id, Request("curta"), CancellationToken.None);
 
@@ -144,7 +144,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_ApproverEmployeeOnOwnSubmitted_ReturnsForbiddenWithoutHistory()
     {
-        Expense expense = SeedSubmitted(TestActors.ApproverEmployee);
+        Expense expense = Seed(TestActors.ApproverEmployee, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.ApproverEmployee, expense.Id, Request(Justification), CancellationToken.None);
 
@@ -161,7 +161,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [DataRow(AppRoles.Admin)]
     public async Task RejectAsync_ActorWithoutApproverRole_ReturnsForbidden(string role)
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         Actor actor = TestActors.Create("user-without-approver", role);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(actor, expense.Id, Request(Justification), CancellationToken.None);
@@ -175,7 +175,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_ActorWithNoRole_ReturnsForbidden()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.NoRole, expense.Id, Request(Justification), CancellationToken.None);
 
@@ -197,8 +197,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft()
     {
-        Expense draft = TestExpenses.Draft(TestActors.Employee1.UserId, _clock.UtcNow);
-        _repository.Seed(draft);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Approver, draft.Id, Request(Justification), CancellationToken.None);
 
@@ -211,7 +210,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_SecondRejection_ReturnsConflictWithSingleRejectedHistory()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         await _service.RejectAsync(TestActors.Approver, expense.Id, Request(Justification), CancellationToken.None);
 
         ServiceResult<ExpenseResponse> second = await _service.RejectAsync(TestActors.Approver, expense.Id, Request("Outra justificativa qualquer"), CancellationToken.None);
@@ -226,7 +225,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_AfterApproval_ReturnsConflictAndKeepsApproval()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         await _service.ApproveAsync(TestActors.Approver, expense.Id, CancellationToken.None);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Approver, expense.Id, Request(Justification), CancellationToken.None);
@@ -244,7 +243,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task RejectAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(SeedSubmitted(TestActors.Employee1), status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Approver, expense.Id, Request(Justification), CancellationToken.None);
 
@@ -257,7 +256,7 @@ public sealed class ExpenseWorkflowServiceRejectTests
     [TestMethod]
     public async Task RejectAsync_ConcurrencyConflictOnSave_ReturnsConflictWithoutHistory()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         _repository.ConflictOnNextSave = true;
 
         ServiceResult<ExpenseResponse> result = await _service.RejectAsync(TestActors.Approver, expense.Id, Request(Justification), CancellationToken.None);
@@ -271,12 +270,9 @@ public sealed class ExpenseWorkflowServiceRejectTests
         return new RejectExpenseRequest { Justification = justification };
     }
 
-    private Expense SeedSubmitted(Actor owner)
+    private Expense Seed(Actor owner, ExpenseStatus status)
     {
-        Expense expense = TestExpenses.Draft(owner.UserId, _clock.UtcNow);
-        expense.Submit(_clock.UtcNow);
-        _repository.Seed(expense);
-        return expense;
+        return _repository.Seed(ExpenseScenario.Of(owner).At(_clock.UtcNow).InStatus(status));
     }
 
     private void AssertJustificationRejected(ServiceResult<ExpenseResponse> result, Expense expense)

@@ -20,7 +20,7 @@ public sealed class ExpensesControllerAuthorizationTests
     [DataRow(nameof(ExpensesController.CreateAsync), AppRoles.Employee)]
     [DataRow(nameof(ExpensesController.UpdateAsync), AppRoles.Employee)]
     [DataRow(nameof(ExpensesController.SubmitAsync), AppRoles.Employee)]
-    public void WriteActions_RequireEmployeeRole(string action, string expectedRoles)
+    public void WriteAction_AuthorizeAttribute_RequiresEmployeeRole(string action, string expectedRoles)
     {
         Assert.AreEqual(expectedRoles, RolesOf(action));
     }
@@ -29,7 +29,7 @@ public sealed class ExpensesControllerAuthorizationTests
     [TestMethod]
     [DataRow(nameof(ExpensesController.ListAsync))]
     [DataRow(nameof(ExpensesController.GetAsync))]
-    public void ReadActions_RequireOneOfTheReaderRoles(string action)
+    public void ReadAction_AuthorizeAttribute_RequiresOneOfTheReaderRoles(string action)
     {
         Assert.AreEqual(AppRoles.ExpenseReaders, RolesOf(action));
         Assert.DoesNotContain(AppRoles.Admin, RolesOf(action).Split(','));
@@ -37,7 +37,7 @@ public sealed class ExpensesControllerAuthorizationTests
 
     /// <summary>Nenhuma rota de reembolsos é pública: o controller não usa <c>[AllowAnonymous]</c>.</summary>
     [TestMethod]
-    public void ExpensesController_HasNoAnonymousAction()
+    public void ExpensesController_AnyAction_IsNeverAnonymous()
     {
         bool controllerIsAnonymous = typeof(ExpensesController).GetCustomAttribute<AllowAnonymousAttribute>() is not null;
         bool anyActionIsAnonymous = typeof(ExpensesController)

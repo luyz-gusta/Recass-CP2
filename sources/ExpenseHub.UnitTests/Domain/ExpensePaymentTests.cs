@@ -76,14 +76,15 @@ public sealed class ExpensePaymentTests
     [DataRow(ExpenseStatus.Submitted)]
     [DataRow(ExpenseStatus.Rejected)]
     [DataRow(ExpenseStatus.Paid)]
-    public void MarkAsPaid_NotApproved_ThrowsWithoutPayment(ExpenseStatus status)
+    public void MarkAsPaid_NotApproved_ThrowsWithoutNewPayment(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft(OwnerId, _createdAt), status);
+        Expense expense = ExpenseScenario.Of(OwnerId).At(_createdAt).InStatus(status);
+        PaymentRecord? previousPayment = expense.Payment;
 
-        Assert.ThrowsExactly<InvalidOperationException>(() => expense.MarkAsPaid(FinanceUserId, _paidAt));
+        Assert.ThrowsExactly<InvalidOperationException>(() => expense.MarkAsPaid("finance-2", _paidAt));
 
         Assert.AreEqual(status, expense.Status);
-        Assert.IsNull(expense.Payment);
+        Assert.AreSame(previousPayment, expense.Payment);
     }
 
     /// <summary>Quem paga é obrigatório: sem identificador não há pagamento.</summary>
@@ -100,9 +101,6 @@ public sealed class ExpensePaymentTests
 
     private static Expense ApprovedExpense()
     {
-        Expense expense = TestExpenses.Draft(OwnerId, _createdAt);
-        expense.Submit(_createdAt.AddHours(1));
-        expense.Approve("approver-1", _createdAt.AddHours(2));
-        return expense;
+        return ExpenseScenario.Of(OwnerId).At(_createdAt).Approved();
     }
 }

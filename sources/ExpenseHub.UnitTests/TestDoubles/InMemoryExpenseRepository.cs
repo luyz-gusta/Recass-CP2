@@ -43,11 +43,12 @@ internal sealed class InMemoryExpenseRepository : IExpenseRepository
     /// <summary>Faz o próximo <see cref="SaveChangesAsync"/> falhar com <see cref="ConcurrencyConflictException"/>, descartando as pendências.</summary>
     public bool ConflictOnNextSave { get; set; }
 
-    /// <summary>Grava um reembolso diretamente como confirmado (arrange dos testes).</summary>
-    public void Seed(Expense expense)
+    /// <summary>Grava um reembolso diretamente como confirmado (arrange dos testes) e o devolve.</summary>
+    public Expense Seed(Expense expense)
     {
         ArgumentNullException.ThrowIfNull(expense);
         _expenses.Add(expense);
+        return expense;
     }
 
     public Task<bool> CategoryExistsAsync(int categoryId, CancellationToken cancellationToken)

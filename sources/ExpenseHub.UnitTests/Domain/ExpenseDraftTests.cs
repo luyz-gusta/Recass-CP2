@@ -152,7 +152,7 @@ public sealed class ExpenseDraftTests
     [DataRow(ExpenseStatus.Paid)]
     public void UpdateDraft_NotDraft_Throws(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft("employee-1", _createdAt), status);
+        Expense expense = ExpenseScenario.Of("employee-1").At(_createdAt).InStatus(status);
 
         Assert.ThrowsExactly<InvalidOperationException>(() => expense.UpdateDraft(2, "Táxi para o aeroporto", 80m, new DateOnly(2026, 9, 28), _later));
     }

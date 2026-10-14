@@ -32,7 +32,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [TestMethod]
     public async Task ApproveAsync_OthersSubmitted_ApprovesWithDeciderAndServerTime()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         _clock.Advance(TimeSpan.FromHours(5));
 
         ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(TestActors.Approver, expense.Id, CancellationToken.None);
@@ -48,7 +48,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [TestMethod]
     public async Task ApproveAsync_OthersSubmitted_RecordsApprovedHistoryInSingleSave()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         _clock.Advance(TimeSpan.FromHours(5));
 
         await _service.ApproveAsync(TestActors.Approver, expense.Id, CancellationToken.None);
@@ -68,7 +68,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [TestMethod]
     public async Task ApproveAsync_ApproverEmployeeOnOthersSubmitted_Approves()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(TestActors.ApproverEmployee, expense.Id, CancellationToken.None);
 
@@ -76,11 +76,24 @@ public sealed class ExpenseWorkflowServiceApproveTests
         Assert.AreEqual(TestActors.ApproverEmployee.UserId, expense.DecidedById);
     }
 
+    /// <summary>A role Admin não tira nem dá permissão de decidir: Admin + Approver aprova o reembolso enviado de outra pessoa.</summary>
+    [TestMethod]
+    public async Task ApproveAsync_AdminWithApproverOnOthersSubmitted_Approves()
+    {
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
+        Actor actor = TestActors.Create("admin-approver-1", AppRoles.Admin, AppRoles.Approver);
+
+        ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(actor, expense.Id, CancellationToken.None);
+
+        Assert.IsTrue(result.Succeeded);
+        Assert.AreEqual(ExpenseStatus.Approved, expense.Status);
+    }
+
     /// <summary>Autoaprovação é proibida: Approver + Employee no próprio reembolso recebe 403, sem histórico e sem gravar.</summary>
     [TestMethod]
     public async Task ApproveAsync_ApproverEmployeeOnOwnSubmitted_ReturnsForbiddenWithoutHistory()
     {
-        Expense expense = SeedSubmitted(TestActors.ApproverEmployee);
+        Expense expense = Seed(TestActors.ApproverEmployee, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(TestActors.ApproverEmployee, expense.Id, CancellationToken.None);
 
@@ -97,7 +110,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [DataRow(AppRoles.Admin)]
     public async Task ApproveAsync_ActorWithoutApproverRole_ReturnsForbidden(string role)
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         Actor actor = TestActors.Create("user-without-approver", role);
 
         ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(actor, expense.Id, CancellationToken.None);
@@ -111,7 +124,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [TestMethod]
     public async Task ApproveAsync_ActorWithNoRole_ReturnsForbidden()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
 
         ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(TestActors.NoRole, expense.Id, CancellationToken.None);
 
@@ -133,8 +146,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [TestMethod]
     public async Task ApproveAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft()
     {
-        Expense draft = TestExpenses.Draft(TestActors.Employee1.UserId, _clock.UtcNow);
-        _repository.Seed(draft);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(TestActors.Approver, draft.Id, CancellationToken.None);
 
@@ -147,7 +159,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [TestMethod]
     public async Task ApproveAsync_SecondApproval_ReturnsConflictWithSingleApprovedHistory()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         await _service.ApproveAsync(TestActors.Approver, expense.Id, CancellationToken.None);
 
         ServiceResult<ExpenseResponse> second = await _service.ApproveAsync(TestActors.Approver, expense.Id, CancellationToken.None);
@@ -161,7 +173,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [TestMethod]
     public async Task ApproveAsync_AfterRejection_ReturnsConflictAndKeepsRejection()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         RejectExpenseRequest rejection = new() { Justification = "Comprovante ilegível, envie novamente." };
         await _service.RejectAsync(TestActors.Approver, expense.Id, rejection, CancellationToken.None);
 
@@ -179,7 +191,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task ApproveAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(SeedSubmitted(TestActors.Employee1), status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(TestActors.Approver, expense.Id, CancellationToken.None);
 
@@ -192,7 +204,7 @@ public sealed class ExpenseWorkflowServiceApproveTests
     [TestMethod]
     public async Task ApproveAsync_ConcurrencyConflictOnSave_ReturnsConflictWithoutHistory()
     {
-        Expense expense = SeedSubmitted(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
         _repository.ConflictOnNextSave = true;
 
         ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(TestActors.Approver, expense.Id, CancellationToken.None);
@@ -201,12 +213,9 @@ public sealed class ExpenseWorkflowServiceApproveTests
         Assert.IsEmpty(_repository.History);
     }
 
-    private Expense SeedSubmitted(Actor owner)
+    private Expense Seed(Actor owner, ExpenseStatus status)
     {
-        Expense expense = TestExpenses.Draft(owner.UserId, _clock.UtcNow);
-        expense.Submit(_clock.UtcNow);
-        _repository.Seed(expense);
-        return expense;
+        return _repository.Seed(ExpenseScenario.Of(owner).At(_clock.UtcNow).InStatus(status));
     }
 
     private void AssertNothingSaved()

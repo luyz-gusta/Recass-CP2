@@ -67,12 +67,13 @@ public sealed class ExpenseDecisionTests
     [DataRow(ExpenseStatus.Paid)]
     public void Approve_NotSubmitted_ThrowsAndKeepsStatus(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft(OwnerId, _createdAt), status);
+        Expense expense = ExpenseScenario.Of(OwnerId).At(_createdAt).InStatus(status);
+        string? previousDecider = expense.DecidedById;
 
-        Assert.ThrowsExactly<InvalidOperationException>(() => expense.Approve(ApproverId, _decidedAt));
+        Assert.ThrowsExactly<InvalidOperationException>(() => expense.Approve("approver-2", _decidedAt));
 
         Assert.AreEqual(status, expense.Status);
-        Assert.IsNull(expense.DecidedById);
+        Assert.AreEqual(previousDecider, expense.DecidedById);
     }
 
     /// <summary>O aprovador é obrigatório: sem identificador não há decisão.</summary>
@@ -124,10 +125,13 @@ public sealed class ExpenseDecisionTests
         Assert.AreEqual(ValidJustification, expense.RejectionReason);
     }
 
-    /// <summary>Os limites de 10 e de 500 caracteres são aceitos.</summary>
+    /// <summary>
+    /// Os limites de 10 e de 500 caracteres são aceitos. Os valores são os do contrato, escritos aqui, e não as constantes
+    /// do domínio: se alguém mudar a constante, o teste falha.
+    /// </summary>
     [TestMethod]
-    [DataRow(Expense.RejectionReasonMinLength)]
-    [DataRow(Expense.RejectionReasonMaxLength)]
+    [DataRow(10)]
+    [DataRow(500)]
     public void Reject_JustificationAtLengthLimit_IsAccepted(int length)
     {
         Expense expense = SubmittedExpense();
@@ -139,11 +143,11 @@ public sealed class ExpenseDecisionTests
         Assert.AreEqual(justification, expense.RejectionReason);
     }
 
-    /// <summary>Justificativa vazia, com 9 ou com 501 caracteres é recusada e o reembolso continua Submitted.</summary>
+    /// <summary>Justificativa vazia, com 9 ou com 501 caracteres é recusada e o reembolso continua Submitted (limites do contrato, literais).</summary>
     [TestMethod]
     [DataRow(0)]
-    [DataRow(Expense.RejectionReasonMinLength - 1)]
-    [DataRow(Expense.RejectionReasonMaxLength + 1)]
+    [DataRow(9)]
+    [DataRow(501)]
     public void Reject_JustificationOutOfLength_ThrowsAndKeepsSubmitted(int length)
     {
         Expense expense = SubmittedExpense();
@@ -185,12 +189,13 @@ public sealed class ExpenseDecisionTests
     [DataRow(ExpenseStatus.Paid)]
     public void Reject_NotSubmitted_ThrowsAndKeepsStatus(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft(OwnerId, _createdAt), status);
+        Expense expense = ExpenseScenario.Of(OwnerId).At(_createdAt).InStatus(status);
+        string? previousReason = expense.RejectionReason;
 
         Assert.ThrowsExactly<InvalidOperationException>(() => expense.Reject(ApproverId, ValidJustification, _decidedAt));
 
         Assert.AreEqual(status, expense.Status);
-        Assert.IsNull(expense.RejectionReason);
+        Assert.AreEqual(previousReason, expense.RejectionReason);
     }
 
     /// <summary>Rejected é final: depois de reprovado, o reembolso não pode ser aprovado.</summary>
@@ -208,9 +213,7 @@ public sealed class ExpenseDecisionTests
 
     private static Expense SubmittedExpense()
     {
-        Expense expense = TestExpenses.Draft(OwnerId, _createdAt);
-        expense.Submit(_submittedAt);
-        return expense;
+        return ExpenseScenario.Of(OwnerId).At(_submittedAt).Submitted();
     }
 
     private static void AssertStillUndecided(Expense expense)

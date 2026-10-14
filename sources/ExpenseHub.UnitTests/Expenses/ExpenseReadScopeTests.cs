@@ -145,6 +145,57 @@ public sealed class ExpenseReadScopeTests
         Assert.IsEmpty(visible);
     }
 
+    /// <summary>
+    /// Reembolso de outra pessoa, estado a estado: o Approver vê só Submitted (nunca Approved); o Finance vê Approved
+    /// e Paid, mas nunca Rejected; o Auditor vê todos; um Employee não vê nenhum.
+    /// </summary>
+    [TestMethod]
+    [DataRow(AppRoles.Approver, ExpenseStatus.Draft, false)]
+    [DataRow(AppRoles.Approver, ExpenseStatus.Submitted, true)]
+    [DataRow(AppRoles.Approver, ExpenseStatus.Approved, false)]
+    [DataRow(AppRoles.Approver, ExpenseStatus.Rejected, false)]
+    [DataRow(AppRoles.Approver, ExpenseStatus.Paid, false)]
+    [DataRow(AppRoles.Finance, ExpenseStatus.Draft, false)]
+    [DataRow(AppRoles.Finance, ExpenseStatus.Submitted, false)]
+    [DataRow(AppRoles.Finance, ExpenseStatus.Approved, true)]
+    [DataRow(AppRoles.Finance, ExpenseStatus.Rejected, false)]
+    [DataRow(AppRoles.Finance, ExpenseStatus.Paid, true)]
+    [DataRow(AppRoles.Auditor, ExpenseStatus.Draft, true)]
+    [DataRow(AppRoles.Auditor, ExpenseStatus.Submitted, true)]
+    [DataRow(AppRoles.Auditor, ExpenseStatus.Approved, true)]
+    [DataRow(AppRoles.Auditor, ExpenseStatus.Rejected, true)]
+    [DataRow(AppRoles.Auditor, ExpenseStatus.Paid, true)]
+    [DataRow(AppRoles.Employee, ExpenseStatus.Draft, false)]
+    [DataRow(AppRoles.Employee, ExpenseStatus.Submitted, false)]
+    [DataRow(AppRoles.Employee, ExpenseStatus.Approved, false)]
+    [DataRow(AppRoles.Employee, ExpenseStatus.Rejected, false)]
+    [DataRow(AppRoles.Employee, ExpenseStatus.Paid, false)]
+    public void ReadScope_OthersExpenseInStatus_FollowsTheAccessMatrix(string role, ExpenseStatus status, bool expectedVisible)
+    {
+        Expense expense = ExpenseScenario.Of(TestActors.Employee2).InStatus(status);
+        Actor reader = TestActors.Create("reader-1", role);
+
+        bool visible = ExpenseAccessPolicy.ReadScope(reader).Compile()(expense);
+
+        Assert.AreEqual(expectedVisible, visible);
+    }
+
+    /// <summary>O dono com a role Employee vê o próprio reembolso em todos os estados.</summary>
+    [TestMethod]
+    [DataRow(ExpenseStatus.Draft)]
+    [DataRow(ExpenseStatus.Submitted)]
+    [DataRow(ExpenseStatus.Approved)]
+    [DataRow(ExpenseStatus.Rejected)]
+    [DataRow(ExpenseStatus.Paid)]
+    public void ReadScope_OwnerInAnyStatus_SeesOwnExpense(ExpenseStatus status)
+    {
+        Expense expense = ExpenseScenario.Of(TestActors.Employee1).InStatus(status);
+
+        bool visible = ExpenseAccessPolicy.ReadScope(TestActors.Employee1).Compile()(expense);
+
+        Assert.IsTrue(visible);
+    }
+
     /// <summary>Admin e usuário sem role não têm role de leitura; todas as demais roles têm.</summary>
     [TestMethod]
     [DataRow(AppRoles.Employee, true)]
@@ -182,9 +233,7 @@ public sealed class ExpenseReadScopeTests
 
     private Expense Seed(Actor owner, ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft(owner.UserId), status);
-        _repository.Seed(expense);
-        return expense;
+        return _repository.Seed(ExpenseScenario.Of(owner).InStatus(status));
     }
 
     private async Task<IReadOnlyList<Guid>> VisibleToAsync(Actor actor)
