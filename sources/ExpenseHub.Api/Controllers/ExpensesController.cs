@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using ExpenseHub.Api.Contracts;
@@ -66,6 +67,60 @@ public sealed class ExpensesController : ControllerBase
     public async Task<IActionResult> UpdateAsync(Guid id, UpdateExpenseRequest request, CancellationToken cancellationToken)
     {
         ServiceResult<ExpenseResponse> result = await _expenseService.UpdateAsync(User.ToActor(), id, request, cancellationToken);
+        return this.ToActionResult(result, expense => Ok(expense));
+    }
+
+    /// <summary>
+    /// Envia um rascunho do próprio usuário para aprovação (Draft para Submitted). Repetir o envio responde 409.
+    /// </summary>
+    /// <param name="id">Identificador do reembolso.</param>
+    /// <param name="cancellationToken">Token de cancelamento.</param>
+    /// <returns>200 com o reembolso enviado; 403 sem a role Employee; 404 para reembolso inexistente ou alheio; 409 se já foi enviado.</returns>
+    [HttpPost("{id:guid}/submit")]
+    [Authorize(Roles = AppRoles.Employee)]
+    [ProducesResponseType<ExpenseResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SubmitAsync(Guid id, CancellationToken cancellationToken)
+    {
+        ServiceResult<ExpenseResponse> result = await _expenseService.SubmitAsync(User.ToActor(), id, cancellationToken);
+        return this.ToActionResult(result, expense => Ok(expense));
+    }
+
+    /// <summary>
+    /// Lista os reembolsos conforme o perfil: Employee vê os próprios, Approver os enviados, Finance os aprovados e pagos e Auditor todos.
+    /// Roles acumuladas somam as visibilidades.
+    /// </summary>
+    /// <param name="cancellationToken">Token de cancelamento.</param>
+    /// <returns>200 com os reembolsos visíveis (lista vazia quando não há nenhum); 403 sem nenhuma role de leitura.</returns>
+    [HttpGet]
+    [Authorize(Roles = AppRoles.ExpenseReaders)]
+    [ProducesResponseType<IReadOnlyList<ExpenseResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ListAsync(CancellationToken cancellationToken)
+    {
+        ServiceResult<IReadOnlyList<ExpenseResponse>> result = await _expenseService.ListAsync(User.ToActor(), cancellationToken);
+        return this.ToActionResult(result, expenses => Ok(expenses));
+    }
+
+    /// <summary>
+    /// Consulta um reembolso visível ao usuário. Reembolso inexistente ou fora do escopo de leitura responde 404, sem distinção.
+    /// </summary>
+    /// <param name="id">Identificador do reembolso.</param>
+    /// <param name="cancellationToken">Token de cancelamento.</param>
+    /// <returns>200 com o reembolso; 403 sem nenhuma role de leitura; 404 para reembolso inexistente ou invisível.</returns>
+    [HttpGet("{id:guid}")]
+    [Authorize(Roles = AppRoles.ExpenseReaders)]
+    [ProducesResponseType<ExpenseResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetAsync(Guid id, CancellationToken cancellationToken)
+    {
+        ServiceResult<ExpenseResponse> result = await _expenseService.GetAsync(User.ToActor(), id, cancellationToken);
         return this.ToActionResult(result, expense => Ok(expense));
     }
 }
