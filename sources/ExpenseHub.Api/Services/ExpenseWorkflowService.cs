@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ExpenseHub.Api.Contracts;
@@ -12,8 +14,12 @@ internal sealed class ExpenseWorkflowService : IExpenseWorkflowService
 {
     private const string ApproverOnlyMessage = "Somente usuários com a role Approver aprovam ou reprovam reembolsos.";
     private const string OwnExpenseDecisionMessage = "Ninguém aprova ou reprova o próprio reembolso, mesmo acumulando a role Approver.";
+    private const string FinanceOnlyMessage = "Somente usuários com a role Finance registram pagamentos.";
+    private const string OwnExpensePaymentMessage = "Ninguém paga o próprio reembolso, mesmo acumulando a role Finance.";
+    private const string ReaderOnlyMessage = "Somente usuários com a role Employee, Approver, Finance ou Auditor consultam o histórico de reembolsos.";
     private const string ExpenseNotFoundMessage = "Reembolso não encontrado.";
     private const string OnlySubmittedDecisionMessage = "Somente reembolsos enviados podem ser aprovados ou reprovados, e a decisão não pode ser repetida.";
+    private const string OnlyApprovedPaymentMessage = "Somente reembolsos aprovados podem ser pagos, e um reembolso nunca é pago duas vezes.";
     private const string InvalidJustificationMessage = "A justificativa da reprovação precisa ter de 10 a 500 caracteres, sem contar os espaços nas pontas.";
 
     private readonly IExpenseRepository _repository;
@@ -95,6 +101,71 @@ internal sealed class ExpenseWorkflowService : IExpenseWorkflowService
         return await SaveAsync(expense, cancellationToken);
     }
 
+    public async Task<ServiceResult<ExpenseResponse>> PayAsync(Actor actor, Guid id, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        if (!actor.IsInRole(AppRoles.Finance))
+        {
+            return ServiceResult.Forbidden<ExpenseResponse>(FinanceOnlyMessage);
+        }
+
+        Expense? expense = await _repository.FindAsync(id, item => true, cancellationToken);
+        if (expense is null)
+        {
+            return ServiceResult.NotFound<ExpenseResponse>(ExpenseNotFoundMessage);
+        }
+
+        AccessDecision decision = ExpenseAccessPolicy.CanPay(actor, expense.OwnerId, expense.Status);
+        if (decision != AccessDecision.Allowed)
+        {
+            return decision.ToDenied<ExpenseResponse>(ExpenseNotFoundMessage, OwnExpensePaymentMessage);
+        }
+
+        // A transição é checada antes de tocar na entidade: um segundo pagamento é conflito e não gera pagamento nem histórico.
+        if (expense.Status != ExpenseStatus.Approved)
+        {
+            return ServiceResult.Conflict<ExpenseResponse>(OnlyApprovedPaymentMessage);
+        }
+
+        DateTime nowUtc = _clock.GetUtcNow().UtcDateTime;
+
+        // Estado, pagamento e histórico entram na mesma gravação: ou os três são persistidos, ou nenhum.
+        PaymentRecord payment = expense.MarkAsPaid(actor.UserId, nowUtc);
+        _repository.AddPayment(payment);
+        _repository.AddHistory(ExpenseHistory.Record(
+            expense.Id,
+            ExpenseAction.Paid,
+            actor.UserId,
+            nowUtc,
+            previousStatus: ExpenseStatus.Approved,
+            newStatus: ExpenseStatus.Paid));
+
+        return await SaveAsync(expense, cancellationToken);
+    }
+
+    public async Task<ServiceResult<IReadOnlyList<ExpenseHistoryResponse>>> GetHistoryAsync(Actor actor, Guid id, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        if (!ExpenseAccessPolicy.HasReadRole(actor))
+        {
+            return ServiceResult.Forbidden<IReadOnlyList<ExpenseHistoryResponse>>(ReaderOnlyMessage);
+        }
+
+        // Mesma visibilidade do detalhe: o escopo vai na consulta, e inexistente e fora do escopo respondem o mesmo 404.
+        Expense? expense = await _repository.FindAsync(id, ExpenseAccessPolicy.ReadScope(actor), cancellationToken);
+        if (expense is null)
+        {
+            return ServiceResult.NotFound<IReadOnlyList<ExpenseHistoryResponse>>(ExpenseNotFoundMessage);
+        }
+
+        IReadOnlyList<ExpenseHistory> entries = await _repository.ListHistoryAsync(expense.Id, cancellationToken);
+        List<ExpenseHistoryResponse> response = entries.Select(entry => entry.ToResponse()).ToList();
+
+        return ServiceResult.Success<IReadOnlyList<ExpenseHistoryResponse>>(response);
+    }
+
     /// <summary>
     /// Escopo, ownership e estado de uma decisão, nesta ordem: inexistente ou rascunho alheio (404), próprio reembolso (403)
     /// e estado diferente de Submitted (409). Nada é alterado antes de todas as verificações passarem.
@@ -123,7 +194,8 @@ internal sealed class ExpenseWorkflowService : IExpenseWorkflowService
     }
 
     /// <summary>
-    /// Confirma a mudança de estado e o histórico juntos, num único <c>SaveChangesAsync</c>.
+    /// Confirma a mudança de estado, o histórico e o pagamento, quando houver, juntos, num único <c>SaveChangesAsync</c>.
+    /// Uma falha de persistência propaga a exceção sem confirmar nada; um conflito de concorrência vira 409.
     /// </summary>
     private async Task<ServiceResult<ExpenseResponse>> SaveAsync(Expense expense, CancellationToken cancellationToken)
     {
