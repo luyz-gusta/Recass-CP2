@@ -654,3 +654,142 @@ Content-Type: application/json
   "expenseDate": "2026-09-15",
   "categoryId": 1
 }
+
+# ============================================================
+# I05 — Reembolsos: enviar, listar e consultar
+# ============================================================
+# Usa o reembolso "criarReembolso" (Draft de funcionario1) da seção I04.
+
+### funcionario2 cria o próprio rascunho → 201 (usado nas listagens)
+# @name criarReembolsoFuncionario2
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Hospedagem durante a conferência",
+  "amount": 890.00,
+  "expenseDate": "2026-09-20",
+  "categoryId": 3
+}
+
+### Outro Employee tentando enviar o rascunho de funcionario1 → 404
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/submit
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### Approver + Employee tentando enviar o rascunho de funcionario1 → 404 (acumular roles não dá acesso)
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/submit
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+
+### Approver (sem Employee) tentando enviar → 403
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/submit
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Auditor tentando enviar → 403 (Auditor não escreve)
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/submit
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+### Admin tentando enviar → 403
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/submit
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Envio sem token → 401
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/submit
+
+### Envio de reembolso inexistente → 404
+POST {{baseUrl}}/api/expenses/00000000-0000-0000-0000-000000000000/submit
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### O proprietário envia o rascunho → 200 (status Submitted, submittedAtUtc preenchido)
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/submit
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### Reenvio do mesmo reembolso → 409 (sem histórico duplicado)
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/submit
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### Edição depois do envio → 409
+PUT {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de editar depois de enviar",
+  "amount": 1.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Listagem do Employee → 200 somente com os reembolsos de funcionario1
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### Listagem do outro Employee → 200 somente com os de funcionario2 (nenhum de funcionario1)
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### Listagem do Approver → 200 somente com os Submitted (nenhum Draft)
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Listagem do Approver + Employee → 200 com os próprios mais os Submitted
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+
+### Listagem do Finance → 200 [] (ainda não há Approved nem Paid)
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Listagem do Auditor → 200 com todos os reembolsos
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+### Listagem do Admin → 403 (Admin não recebe acesso funcional)
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Listagem com token antigo, sem roles → 403
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginSemRole.response.body.$.accessToken}}
+
+### Listagem sem token → 401
+GET {{baseUrl}}/api/expenses
+
+### O proprietário consulta o detalhe → 200
+GET {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### Trocar o id na URL por um reembolso de outro Employee → 404
+GET {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### Approver consulta um Submitted → 200
+GET {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Approver consulta o Draft de funcionario2 → 404 (não revela que existe)
+GET {{baseUrl}}/api/expenses/{{criarReembolsoFuncionario2.response.body.$.id}}
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Finance consulta um Submitted → 404 (só vê Approved e Paid)
+GET {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Auditor consulta qualquer reembolso, inclusive Draft alheio → 200
+GET {{baseUrl}}/api/expenses/{{criarReembolsoFuncionario2.response.body.$.id}}
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+### Admin consulta o detalhe → 403
+GET {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Reembolso inexistente → 404 (mesma resposta de um reembolso fora do escopo)
+GET {{baseUrl}}/api/expenses/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### Identificador que não é GUID → 404
+GET {{baseUrl}}/api/expenses/abc
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### Detalhe sem token → 401
+GET {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}

@@ -189,7 +189,32 @@ Corpo de `POST` e de `PUT` (os dois têm exatamente os mesmos quatro campos, tod
 - **Histórico:** a criação grava a ação `Created` (sem estado anterior, novo estado `Draft`) e cada edição que muda algo grava `Updated` (`Draft` → `Draft`), com o texto das alterações no formato `campo: antigo -> novo; ...`, por exemplo `amount: 150.50 -> 210.00; description: ... -> ...`. Reenviar os mesmos dados responde `200` sem histórico novo e sem mexer em `updatedAtUtc`. Reembolso e histórico são gravados juntos, num único `SaveChanges`.
 - **Concorrência:** cada alteração renova o `ConcurrencyStamp`. Se outra operação alterar o mesmo reembolso antes da gravação, a resposta é `409`.
 
-Envio, listagem e consulta (I05) e a matriz de acesso (I06) serão documentados nas issues correspondentes.
+### Enviar, listar e consultar (I05)
+
+| Rota | Quem acessa | Resultado |
+|---|---|---|
+| `POST /api/expenses/{id}/submit` | `Employee`, somente o proprietário | `200` com o reembolso em `Submitted`. Sem a role Employee → `403`; inexistente **ou de outra pessoa** → `404`; já enviado ou fora de `Draft` → `409` |
+| `GET /api/expenses` | `Employee`, `Approver`, `Finance` ou `Auditor` | `200` com os reembolsos visíveis ao perfil (lista vazia quando não há nenhum), do mais recente para o mais antigo. Admin sozinho ou usuário sem role → `403` |
+| `GET /api/expenses/{id}` | `Employee`, `Approver`, `Finance` ou `Auditor` | `200` com o reembolso. Admin sozinho ou sem role → `403`; inexistente **ou fora do escopo de leitura** → `404` |
+
+**Visibilidade de leitura** (lista e detalhe):
+
+| Role | Vê |
+|---|---|
+| `Employee` | os próprios reembolsos, em qualquer estado |
+| `Approver` | somente os `Submitted` (nunca o rascunho de outra pessoa) |
+| `Finance` | somente os `Approved` e os `Paid` |
+| `Auditor` | todos |
+| `Admin` | nenhum: a role Admin, sozinha, não dá acesso funcional |
+
+Quem acumula roles recebe a **união** das visibilidades (por exemplo, `Approver` + `Employee` vê os próprios reembolsos mais todos os `Submitted`).
+
+- **Filtro no banco:** a visibilidade é uma expressão (`ExpenseAccessPolicy.ReadScope`) aplicada à consulta do EF Core antes de materializar os dados, e vira o `WHERE` do SQL. Nada é carregado para ser filtrado em memória.
+- **Sem vazamento:** reembolso inexistente e reembolso fora do escopo respondem `404` exatamente igual (mesmo status e mesma mensagem). O `403` só aparece quando o usuário não tem nenhuma role de leitura.
+- **Envio:** muda `Draft` → `Submitted`, preenche `submittedAtUtc` e grava o histórico `Submitted` (`Draft` → `Submitted`) no mesmo `SaveChanges`. Não existe reenvio: enviar de novo responde `409` e não cria histórico duplicado. Depois de enviado, o reembolso não pode mais ser editado (`409`).
+- **Somente leitura para Auditor e Admin:** nenhum dos dois cria, edita ou envia reembolsos (`403`).
+
+A matriz de acesso completa (I06) será documentada na issue correspondente.
 
 ## Aprovação, pagamento e histórico (I07–I08)
 
