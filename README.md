@@ -88,7 +88,49 @@ Toda resposta de erro segue `ProblemDetails`. Campos desconhecidos no JSON (por 
 
 ## Autenticação (I02)
 
-A completar na issue correspondente.
+- **Identity:** usuários e roles do ASP.NET Core Identity ficam no mesmo banco SQLite. As senhas são guardadas só como hash.
+- **Login:** `POST /login` com `{ "email": "...", "password": "..." }` devolve o token bearer nativo do Identity:
+
+  ```json
+  { "tokenType": "Bearer", "accessToken": "...", "expiresIn": 3600, "refreshToken": "..." }
+  ```
+
+  Envie o token nas demais requisições com `Authorization: Bearer <accessToken>`. Credencial inválida responde `401`. Depois de 5 tentativas erradas, a conta fica bloqueada por 5 minutos.
+- **Rotas protegidas:** todas as rotas exigem autenticação, exceto `POST /register`, `POST /login`, `GET /health` e o OpenAPI de desenvolvimento.
+  - sem token, ou com token inválido → `401`;
+  - autenticado, mas sem a role exigida → `403`.
+  - Todas as respostas de erro seguem `ProblemDetails`.
+- **`GET /api/me`** mostra o id, o e-mail e as roles presentes no token.
+- **Roles e token:** as roles entram no token no momento do login. **Depois de qualquer alteração de roles, o usuário precisa fazer login novamente.**
+
+### Conta Admin inicial (seed)
+
+Ao iniciar, a API cria, se ainda não existirem, as roles `Admin`, `Employee`, `Approver`, `Finance` e `Auditor` e **uma única conta: o Admin**. Nenhum outro usuário é criado pelo seed. O seed é idempotente: reiniciar a API não duplica roles nem o Admin, e não altera a senha de um Admin que já existe.
+
+- O e-mail vem de `AdminSeed:Email` no `appsettings.json` (`admin@expensehub.local`).
+- A senha **nunca fica no repositório**. Configure-a de uma destas formas antes de iniciar a API:
+
+  ```shell
+  # opção 1: user-secrets (fica no perfil do seu usuário, fora do repositório)
+  dotnet user-secrets set "AdminSeed:Password" "<senha forte>" --project sources/ExpenseHub.Api
+
+  # opção 2: variável de ambiente (PowerShell)
+  $env:AdminSeed__Password = "<senha forte>"
+  ```
+
+- A senha precisa seguir a política do Identity: 6 ou mais caracteres, com letra maiúscula, letra minúscula, dígito e símbolo.
+- Sem a senha configurada, a API sobe e cria as roles, mas não cria o Admin: um aviso no log explica o que falta.
+
+### Requisições de exemplo (`.http`)
+
+O arquivo [`ExpenseHub.Api.http`](sources/ExpenseHub.Api/ExpenseHub.Api.http) lê as senhas de um `.env` local, ignorado pelo Git. Crie `sources/ExpenseHub.Api/.env` com:
+
+```text
+EXPENSEHUB_ADMIN_PASS=<a mesma senha configurada em AdminSeed:Password>
+EXPENSEHUB_DEMO_PASS=<senha para os usuários de demonstração>
+```
+
+O arquivo funciona com a extensão REST Client do VS Code ou com o Visual Studio 2022 17.12+.
 
 ## Usuários e roles (I03)
 

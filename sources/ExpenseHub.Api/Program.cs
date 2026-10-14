@@ -2,8 +2,10 @@ using System;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using ExpenseHub.Api.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,19 +36,42 @@ internal static class Program
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IExpenseRepository, ExpenseRepository>();
 
+        builder.Services
+            .AddIdentityCore<IdentityUser>(options =>
+            {
+                options.User.RequireUniqueEmail = true;
+            })
+            .AddRoles<IdentityRole>()
+            .AddEntityFrameworkStores<ExpenseHubDbContext>()
+            .AddSignInManager();
+
+        // Token bearer nativo do Identity: não depende de chave de assinatura configurada.
+        builder.Services
+            .AddAuthentication(IdentityConstants.BearerScheme)
+            .AddBearerToken(IdentityConstants.BearerScheme);
+
+        // Toda rota exige usuário autenticado, exceto as marcadas com [AllowAnonymous].
+        builder.Services.AddAuthorizationBuilder()
+            .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build());
+
         WebApplication app = builder.Build();
 
         app.UseExceptionHandler();
         app.UseStatusCodePages();
+        app.UseAuthentication();
+        app.UseAuthorization();
 
         if (app.Environment.IsDevelopment())
         {
-            app.MapOpenApi();
+            app.MapOpenApi().AllowAnonymous();
         }
 
         app.MapControllers();
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
-            .WithName("GetHealth");
+            .WithName("GetHealth")
+            .AllowAnonymous();
 
         await DatabaseInitializer.InitializeAsync(app.Services, app.Lifetime.ApplicationStopping);
         await app.RunAsync();
