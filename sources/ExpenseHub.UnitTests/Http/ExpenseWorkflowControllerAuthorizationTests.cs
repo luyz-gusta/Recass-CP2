@@ -25,6 +25,23 @@ public sealed class ExpenseWorkflowControllerAuthorizationTests
         Assert.AreEqual(AppRoles.Approver, RolesOf(action));
     }
 
+    /// <summary>Registrar pagamento exige somente a role Finance.</summary>
+    [TestMethod]
+    public void PayAction_RequiresFinanceRole()
+    {
+        Assert.AreEqual(AppRoles.Finance, RolesOf(nameof(ExpenseWorkflowController.PayAsync)));
+    }
+
+    /// <summary>O histórico exige uma das quatro roles de leitura; Admin não está entre elas.</summary>
+    [TestMethod]
+    public void HistoryAction_RequiresOneOfTheReaderRoles()
+    {
+        string roles = RolesOf(nameof(ExpenseWorkflowController.GetHistoryAsync));
+
+        Assert.AreEqual(AppRoles.ExpenseReaders, roles);
+        Assert.DoesNotContain(AppRoles.Admin, roles.Split(','));
+    }
+
     /// <summary>As decisões são <c>POST /api/expenses/{id}/approve</c> e <c>POST /api/expenses/{id}/reject</c>, com id GUID.</summary>
     [TestMethod]
     [DataRow(nameof(ExpenseWorkflowController.ApproveAsync), "{id:guid}/approve")]
@@ -36,6 +53,26 @@ public sealed class ExpenseWorkflowControllerAuthorizationTests
         Assert.IsNotNull(post);
         Assert.AreEqual(template, post.Template);
         Assert.AreEqual("api/expenses", typeof(ExpenseWorkflowController).GetCustomAttribute<RouteAttribute>()?.Template);
+    }
+
+    /// <summary>O pagamento é <c>POST /api/expenses/{id}/pay</c>, com id GUID.</summary>
+    [TestMethod]
+    public void PayAction_IsPostRouteUnderExpenses()
+    {
+        HttpPostAttribute? post = ActionOf(nameof(ExpenseWorkflowController.PayAsync)).GetCustomAttribute<HttpPostAttribute>();
+
+        Assert.IsNotNull(post);
+        Assert.AreEqual("{id:guid}/pay", post.Template);
+    }
+
+    /// <summary>O histórico é <c>GET /api/expenses/{id}/history</c>, com id GUID.</summary>
+    [TestMethod]
+    public void HistoryAction_IsGetRouteUnderExpenses()
+    {
+        HttpGetAttribute? get = ActionOf(nameof(ExpenseWorkflowController.GetHistoryAsync)).GetCustomAttribute<HttpGetAttribute>();
+
+        Assert.IsNotNull(get);
+        Assert.AreEqual("{id:guid}/history", get.Template);
     }
 
     /// <summary>Nenhuma rota do fluxo é pública e toda action declara as roles exigidas: nenhuma rota nova nasce sem atributo.</summary>
