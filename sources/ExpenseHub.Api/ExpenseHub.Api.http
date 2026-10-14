@@ -347,3 +347,310 @@ Content-Type: application/json
 ### Após novo login, o token traz a role atribuída → 200 com roles ["Employee"]
 GET {{baseUrl}}/api/me
 Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+# ============================================================
+# I04 — Reembolsos: rascunho (criar e editar)
+# ============================================================
+# Execute depois dos logins por perfil. O proprietário vem sempre do token: o corpo só tem
+# description, amount, expenseDate (yyyy-MM-dd, nunca futura) e categoryId (1 a 5).
+
+### Employee cria um rascunho → 201 (Draft, ownerId = funcionario1, Location /api/expenses/{id})
+# @name criarReembolso
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 150.50,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Valor mínimo (0.01) → 201
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Estacionamento no aeroporto",
+  "amount": 0.01,
+  "expenseDate": "2026-09-16",
+  "categoryId": 2
+}
+
+### Valor zero → 400 (Amount)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 0,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Valor abaixo de 0.01 → 400 (Amount)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 0.009,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Valor acima de Int32.MaxValue → 400 (Amount)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 2147483647.01,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Data futura → 400 (ExpenseDate)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 150.50,
+  "expenseDate": "2099-12-31",
+  "categoryId": 1
+}
+
+### Descrição curta (menos de 10 caracteres) → 400 (Description)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Táxi",
+  "amount": 150.50,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Categoria inexistente → 400 (CategoryId)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 150.50,
+  "expenseDate": "2026-09-15",
+  "categoryId": 99
+}
+
+### Campo obrigatório ausente (sem amount) → 400, nunca vira 0 em silêncio
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Cliente tentando definir o proprietário → 400 (campo desconhecido, sem mass assignment)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{registerFuncionario2.response.body.$.id}}",
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 150.50,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Cliente tentando definir o estado → 400 (campo desconhecido)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "status": "Approved",
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 150.50,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Sem token → 401
+POST {{baseUrl}}/api/expenses
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 150.50,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Approver (sem Employee) tentando criar → 403
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 150.50,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Auditor tentando criar → 403
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 150.50,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Admin tentando criar → 403 (Admin não recebe acesso funcional)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente em São Paulo",
+  "amount": 150.50,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Approver + Employee cria o próprio rascunho → 201 (ownerId = aprovador.funcionario)
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Passagem de metrô para o cliente",
+  "amount": 12.40,
+  "expenseDate": "2026-09-17",
+  "categoryId": 2
+}
+
+### O proprietário edita o rascunho → 200 (updatedAtUtc novo; histórico Updated com as alterações)
+PUT {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente e equipe em São Paulo",
+  "amount": 210.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Mesmos dados de novo → 200 sem alteração (nenhum histórico novo, updatedAtUtc igual)
+PUT {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente e equipe em São Paulo",
+  "amount": 210.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Edição com valor inválido → 400
+PUT {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente e equipe em São Paulo",
+  "amount": 0,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Edição tentando trocar o proprietário → 400 (campo desconhecido)
+PUT {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "outro-usuario",
+  "description": "Almoço com cliente e equipe em São Paulo",
+  "amount": 210.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Outro Employee editando o rascunho de funcionario1 → 404 (não revela que existe)
+PUT {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de alterar o rascunho alheio",
+  "amount": 1.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Approver + Employee editando o rascunho de funcionario1 → 404 (acumular roles não dá acesso)
+PUT {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de alterar o rascunho alheio",
+  "amount": 1.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Approver (sem Employee) editando → 403
+PUT {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente e equipe em São Paulo",
+  "amount": 210.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Edição de reembolso inexistente → 404
+PUT {{baseUrl}}/api/expenses/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente e equipe em São Paulo",
+  "amount": 210.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Edição sem token → 401
+PUT {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Content-Type: application/json
+
+{
+  "description": "Almoço com cliente e equipe em São Paulo",
+  "amount": 210.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
