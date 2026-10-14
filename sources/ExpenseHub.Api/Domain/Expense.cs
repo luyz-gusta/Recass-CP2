@@ -139,4 +139,23 @@ internal sealed class Expense
 
         return string.Join("; ", changes);
     }
+
+    /// <summary>
+    /// Envia o rascunho para aprovação (<see cref="ExpenseStatus.Draft"/> para <see cref="ExpenseStatus.Submitted"/>).
+    /// Não existe reenvio: um reembolso fora de Draft nunca volta a ser enviado.
+    /// </summary>
+    /// <param name="nowUtc">Instante atual em UTC, obtido do <see cref="TimeProvider"/>.</param>
+    /// <exception cref="InvalidOperationException">O reembolso não está em <see cref="ExpenseStatus.Draft"/>.</exception>
+    public void Submit(DateTime nowUtc)
+    {
+        if (Status != ExpenseStatus.Draft)
+        {
+            throw new InvalidOperationException($"Somente um rascunho pode ser enviado; o estado atual é {Status}.");
+        }
+
+        Status = ExpenseStatus.Submitted;
+        SubmittedAtUtc = nowUtc;
+        UpdatedAtUtc = nowUtc;
+        ConcurrencyStamp = Guid.NewGuid();
+    }
 }

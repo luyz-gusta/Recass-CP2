@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ExpenseHub.Api.Contracts;
@@ -11,10 +12,12 @@ namespace ExpenseHub.Api.Services;
 
 internal sealed class ExpenseService : IExpenseService
 {
-    private const string EmployeeOnlyMessage = "Somente usuários com a role Employee criam e editam os próprios reembolsos.";
+    private const string EmployeeOnlyMessage = "Somente usuários com a role Employee criam, editam e enviam os próprios reembolsos.";
+    private const string ReaderOnlyMessage = "Somente usuários com a role Employee, Approver, Finance ou Auditor consultam reembolsos.";
     private const string ExpenseNotFoundMessage = "Reembolso não encontrado.";
     private const string InvalidDataMessage = "Os dados do reembolso são inválidos.";
-    private const string OnlyDraftMessage = "Somente reembolsos em rascunho podem ser editados.";
+    private const string OnlyDraftEditMessage = "Somente reembolsos em rascunho podem ser editados.";
+    private const string OnlyDraftSubmitMessage = "Somente reembolsos em rascunho podem ser enviados; este reembolso já foi enviado.";
 
     private readonly IExpenseRepository _repository;
     private readonly TimeProvider _clock;
@@ -92,7 +95,7 @@ internal sealed class ExpenseService : IExpenseService
 
         if (expense.Status != ExpenseStatus.Draft)
         {
-            return ServiceResult.Conflict<ExpenseResponse>(OnlyDraftMessage);
+            return ServiceResult.Conflict<ExpenseResponse>(OnlyDraftEditMessage);
         }
 
         ExpenseInput input = validation.Value!;
@@ -125,6 +128,90 @@ internal sealed class ExpenseService : IExpenseService
         // Recarrega para a resposta refletir o nome da categoria atual.
         Expense saved = await _repository.FindAsync(expense.Id, item => true, cancellationToken) ?? expense;
         return ServiceResult.Success(saved.ToResponse());
+    }
+
+    public async Task<ServiceResult<ExpenseResponse>> SubmitAsync(Actor actor, Guid id, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        if (!actor.IsInRole(AppRoles.Employee))
+        {
+            return ServiceResult.Forbidden<ExpenseResponse>(EmployeeOnlyMessage);
+        }
+
+        Expense? expense = await _repository.FindAsync(id, item => true, cancellationToken);
+        if (expense is null)
+        {
+            return ServiceResult.NotFound<ExpenseResponse>(ExpenseNotFoundMessage);
+        }
+
+        AccessDecision decision = ExpenseAccessPolicy.CanManageDraft(actor, expense.OwnerId);
+        if (decision != AccessDecision.Allowed)
+        {
+            return decision.ToDenied<ExpenseResponse>(ExpenseNotFoundMessage, EmployeeOnlyMessage);
+        }
+
+        // A transição é checada antes de tocar na entidade: repetir o envio é conflito e não gera histórico duplicado.
+        if (expense.Status != ExpenseStatus.Draft)
+        {
+            return ServiceResult.Conflict<ExpenseResponse>(OnlyDraftSubmitMessage);
+        }
+
+        DateTime nowUtc = _clock.GetUtcNow().UtcDateTime;
+        expense.Submit(nowUtc);
+        _repository.AddHistory(ExpenseHistory.Record(
+            expense.Id,
+            ExpenseAction.Submitted,
+            actor.UserId,
+            nowUtc,
+            previousStatus: ExpenseStatus.Draft,
+            newStatus: ExpenseStatus.Submitted));
+
+        try
+        {
+            await _repository.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException exception)
+        {
+            return ServiceResult.Conflict<ExpenseResponse>(exception.Message);
+        }
+
+        return ServiceResult.Success(expense.ToResponse());
+    }
+
+    public async Task<ServiceResult<IReadOnlyList<ExpenseResponse>>> ListAsync(Actor actor, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        if (!ExpenseAccessPolicy.HasReadRole(actor))
+        {
+            return ServiceResult.Forbidden<IReadOnlyList<ExpenseResponse>>(ReaderOnlyMessage);
+        }
+
+        // O filtro de visibilidade vai na consulta: o banco devolve só o que o ator pode ver.
+        IReadOnlyList<Expense> visible = await _repository.ListAsync(ExpenseAccessPolicy.ReadScope(actor), cancellationToken);
+        List<ExpenseResponse> response = visible.Select(expense => expense.ToResponse()).ToList();
+
+        return ServiceResult.Success<IReadOnlyList<ExpenseResponse>>(response);
+    }
+
+    public async Task<ServiceResult<ExpenseResponse>> GetAsync(Actor actor, Guid id, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        if (!ExpenseAccessPolicy.HasReadRole(actor))
+        {
+            return ServiceResult.Forbidden<ExpenseResponse>(ReaderOnlyMessage);
+        }
+
+        // Inexistente e fora do escopo são indistinguíveis: ambos viram 404, sem vazar que o recurso existe.
+        Expense? expense = await _repository.FindAsync(id, ExpenseAccessPolicy.ReadScope(actor), cancellationToken);
+        if (expense is null)
+        {
+            return ServiceResult.NotFound<ExpenseResponse>(ExpenseNotFoundMessage);
+        }
+
+        return ServiceResult.Success(expense.ToResponse());
     }
 
     private async Task<ServiceResult<ExpenseInput>> ValidateAsync(
