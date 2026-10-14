@@ -16,20 +16,39 @@ using Microsoft.AspNetCore.Mvc;
 namespace ExpenseHub.Api.Controllers;
 
 /// <summary>
-/// Autenticação: login com token bearer e consulta do usuário autenticado.
+/// Autenticação: cadastro público, login com token bearer e consulta do usuário autenticado.
 /// </summary>
 [ApiController]
 public sealed class AuthController : ControllerBase
 {
     private readonly SignInManager<IdentityUser> _signInManager;
+    private readonly IAccountService _accountService;
 
     /// <summary>
     /// Cria o controller de autenticação.
     /// </summary>
     /// <param name="signInManager">Gerenciador de login do Identity.</param>
-    public AuthController(SignInManager<IdentityUser> signInManager)
+    /// <param name="accountService">Serviço de cadastro de usuários.</param>
+    public AuthController(SignInManager<IdentityUser> signInManager, IAccountService accountService)
     {
         _signInManager = signInManager;
+        _accountService = accountService;
+    }
+
+    /// <summary>
+    /// Cadastra um usuário sem nenhuma role. As roles são atribuídas depois por um Admin.
+    /// </summary>
+    /// <param name="request">E-mail e senha. Campos extras, como roles, são rejeitados com 400.</param>
+    /// <returns>201 com o usuário; 400 para dados inválidos; 409 para e-mail já cadastrado.</returns>
+    [HttpPost("/register")]
+    [AllowAnonymous]
+    [ProducesResponseType<UserResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RegisterAsync(RegisterRequest request)
+    {
+        ServiceResult<UserResponse> result = await _accountService.RegisterAsync(request);
+        return this.ToActionResult(result, user => StatusCode(StatusCodes.Status201Created, user));
     }
 
     /// <summary>
