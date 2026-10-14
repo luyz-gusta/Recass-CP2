@@ -11,6 +11,12 @@ namespace ExpenseHub.Api.Domain;
 /// </summary>
 internal sealed class Expense
 {
+    /// <summary>Tamanho mínimo da justificativa de reprovação, sem contar os espaços nas pontas.</summary>
+    public const int RejectionReasonMinLength = 10;
+
+    /// <summary>Tamanho máximo da justificativa de reprovação, sem contar os espaços nas pontas.</summary>
+    public const int RejectionReasonMaxLength = 500;
+
     private Expense()
     {
     }
@@ -155,6 +161,66 @@ internal sealed class Expense
 
         Status = ExpenseStatus.Submitted;
         SubmittedAtUtc = nowUtc;
+        UpdatedAtUtc = nowUtc;
+        ConcurrencyStamp = Guid.NewGuid();
+    }
+
+    /// <summary>
+    /// Aprova um reembolso enviado (<see cref="ExpenseStatus.Submitted"/> para <see cref="ExpenseStatus.Approved"/>),
+    /// registrando quem decidiu e quando. A decisão é única: um reembolso já decidido não é aprovado de novo.
+    /// </summary>
+    /// <param name="approverId">Identificador do aprovador autenticado, informado pelo serviço.</param>
+    /// <param name="nowUtc">Instante atual em UTC, obtido do <see cref="TimeProvider"/>.</param>
+    /// <exception cref="InvalidOperationException">O reembolso não está em <see cref="ExpenseStatus.Submitted"/>.</exception>
+    public void Approve(string approverId, DateTime nowUtc)
+    {
+        if (Status != ExpenseStatus.Submitted)
+        {
+            throw new InvalidOperationException($"Somente um reembolso enviado pode ser aprovado; o estado atual é {Status}.");
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(approverId);
+
+        Decide(ExpenseStatus.Approved, approverId, nowUtc);
+    }
+
+    /// <summary>
+    /// Reprova um reembolso enviado (<see cref="ExpenseStatus.Submitted"/> para <see cref="ExpenseStatus.Rejected"/>),
+    /// guardando a justificativa sem os espaços nas pontas. <see cref="ExpenseStatus.Rejected"/> é um estado final.
+    /// </summary>
+    /// <param name="approverId">Identificador do aprovador autenticado, informado pelo serviço.</param>
+    /// <param name="justification">
+    /// Justificativa já validada pelo serviço; sem os espaços nas pontas, precisa ter de
+    /// <see cref="RejectionReasonMinLength"/> a <see cref="RejectionReasonMaxLength"/> caracteres.
+    /// </param>
+    /// <param name="nowUtc">Instante atual em UTC, obtido do <see cref="TimeProvider"/>.</param>
+    /// <exception cref="InvalidOperationException">O reembolso não está em <see cref="ExpenseStatus.Submitted"/>.</exception>
+    /// <exception cref="ArgumentException">A justificativa é nula ou está fora do tamanho permitido.</exception>
+    public void Reject(string approverId, string justification, DateTime nowUtc)
+    {
+        if (Status != ExpenseStatus.Submitted)
+        {
+            throw new InvalidOperationException($"Somente um reembolso enviado pode ser reprovado; o estado atual é {Status}.");
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(approverId);
+
+        // Defesa em profundidade: o serviço já valida (400), mas o domínio nunca grava uma reprovação sem justificativa válida.
+        string reason = justification?.Trim() ?? string.Empty;
+        if (reason.Length is < RejectionReasonMinLength or > RejectionReasonMaxLength)
+        {
+            throw new ArgumentException("A justificativa da reprovação precisa ter de 10 a 500 caracteres, sem contar os espaços nas pontas.", nameof(justification));
+        }
+
+        RejectionReason = reason;
+        Decide(ExpenseStatus.Rejected, approverId, nowUtc);
+    }
+
+    private void Decide(ExpenseStatus outcome, string approverId, DateTime nowUtc)
+    {
+        Status = outcome;
+        DecidedById = approverId;
+        DecidedAtUtc = nowUtc;
         UpdatedAtUtc = nowUtc;
         ConcurrencyStamp = Guid.NewGuid();
     }

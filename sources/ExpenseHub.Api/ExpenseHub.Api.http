@@ -1109,3 +1109,258 @@ Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
 # ------------------------------------------------------------
 # approve, reject, pay e history são validadas na I07 e na I08. As decisões contextuais já estão prontas em
 # ExpenseAccessPolicy.CanDecide e CanPay (403 para o próprio reembolso, 404 para rascunho alheio).
+
+# ============================================================
+# I07 — Aprovar e reprovar
+# ============================================================
+# Execute depois das seções I03 a I06, com o banco zerado: usa os logins nomeados e o reembolso
+# criarReembolso, que a seção I05 deixou em Submitted. Só um Approver que não é o dono decide,
+# só em Submitted e uma única vez. Aprovador e horário vêm do token e do servidor, nunca do corpo.
+# Os resultados observados estão em docs/EVIDENCIAS-AUTORIZACAO.md.
+
+### Dados da I07: funcionario2 cria um reembolso que será reprovado → 201
+# @name decisaoParaReprovar
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Hospedagem sem nota fiscal anexada",
+  "amount": 420.00,
+  "expenseDate": "2026-09-20",
+  "categoryId": 3
+}
+
+### Dados da I07: funcionario2 envia o reembolso → 200 (Submitted)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/submit
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### Dados da I07: funcionario2 cria um reembolso para o Approver + Employee decidir → 201
+# @name decisaoParaAprovadorFuncionario
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Táxi do aeroporto até o cliente",
+  "amount": 95.40,
+  "expenseDate": "2026-09-21",
+  "categoryId": 2
+}
+
+### Dados da I07: funcionario2 envia o reembolso → 200 (Submitted)
+POST {{baseUrl}}/api/expenses/{{decisaoParaAprovadorFuncionario.response.body.$.id}}/submit
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### Dados da I07: Approver + Employee cria o PRÓPRIO reembolso → 201
+# @name decisaoDoAprovadorFuncionario
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Material para o workshop de equipe",
+  "amount": 130.00,
+  "expenseDate": "2026-09-22",
+  "categoryId": 4
+}
+
+### Dados da I07: Approver + Employee envia o próprio reembolso → 200 (Submitted)
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/submit
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Aprovação: Submitted → Approved, uma única vez
+# ------------------------------------------------------------
+
+### Approver aprova o reembolso enviado de funcionario1 → 200 (Approved; decidedById = aprovador; decidedAtUtc do servidor)
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Aprovar de novo → 409 (decisão repetida, sem histórico duplicado)
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Reprovar o que já foi aprovado → 409 (a decisão é única)
+POST {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "Tentativa de reprovar depois de aprovado" }
+
+### Depois da aprovação o Finance passa a enxergar o reembolso → 200 (Finance vê Approved e Paid)
+GET {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### E o Approver deixa de enxergar → 404 (Approver só vê Submitted)
+GET {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Approver + Employee aprova o reembolso enviado de OUTRA pessoa → 200 (a role acumulada vale para os outros)
+POST {{baseUrl}}/api/expenses/{{decisaoParaAprovadorFuncionario.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Reprovação: Submitted → Rejected, com justificativa de 10 a 500 caracteres
+# ------------------------------------------------------------
+
+### Reprovar sem justificativa (corpo vazio) → 400 (Justification)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{}
+
+### Justificativa nula → 400 (Justification)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": null }
+
+### Justificativa só com espaços → 400 (Justification)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "            " }
+
+### Justificativa curta (9 caracteres) → 400 (Justification)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "123456789" }
+
+### 9 caracteres cercados de espaços → 400 (o tamanho é medido sem os espaços nas pontas)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "    123456789    " }
+
+### Justificativa longa (501 caracteres) → 400 (Justification)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Justificativa extensa demais. Passa do limite: 501." }
+
+### Cliente tentando informar o aprovador → 400 (campo desconhecido: o aprovador vem do token)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "justification": "Falta a nota fiscal da hospedagem.",
+  "decidedById": "{{registerFuncionario2.response.body.$.id}}"
+}
+
+### Cliente tentando informar o estado → 400 (campo desconhecido: o estado é do servidor)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "justification": "Falta a nota fiscal da hospedagem.",
+  "status": "Approved"
+}
+
+### Approver reprova com justificativa → 200 (Rejected; rejectionReason gravada sem os espaços nas pontas)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "   Falta a nota fiscal da hospedagem; envie o comprovante.   " }
+
+### Reprovar de novo → 409 (sem histórico duplicado)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "Segunda tentativa de reprovar o mesmo reembolso" }
+
+### Aprovar o que foi reprovado → 409 (Rejected é final)
+POST {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### O dono consulta o reembolso reprovado → 200 (status Rejected com a justificativa)
+GET {{baseUrl}}/api/expenses/{{decisaoParaReprovar.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Ownership, roles e escopo
+# ------------------------------------------------------------
+
+### Approver + Employee aprova o PRÓPRIO reembolso → 403 (autoaprovação proibida, mesmo acumulando roles)
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+
+### Approver + Employee reprova o PRÓPRIO reembolso → 403
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "Tentativa de reprovar o próprio reembolso" }
+
+### Employee (sem Approver) tenta aprovar → 403
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/approve
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### Finance tenta aprovar → 403
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/approve
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Finance + Employee tenta reprovar → 403
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/reject
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "Tentativa de reprovar sem a role Approver" }
+
+### Auditor tenta aprovar → 403 (Auditor não altera dados)
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/approve
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+### Admin tenta aprovar → 403 (Admin não recebe acesso funcional)
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/approve
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Usuário sem nenhuma role tenta reprovar → 403
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/reject
+Authorization: Bearer {{loginSemRole.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "Tentativa de reprovar sem nenhuma role" }
+
+### Aprovar sem token → 401
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/approve
+
+### Reprovar sem token → 401
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/reject
+Content-Type: application/json
+
+{ "justification": "Tentativa de reprovar sem token" }
+
+### Approver aprova o rascunho de funcionario2 → 404 (não enxerga rascunhos de outras pessoas)
+POST {{baseUrl}}/api/expenses/{{criarReembolsoFuncionario2.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Approver reprova o rascunho de funcionario2 → 404
+POST {{baseUrl}}/api/expenses/{{criarReembolsoFuncionario2.response.body.$.id}}/reject
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "justification": "Tentativa de reprovar um rascunho alheio" }
+
+### Aprovar reembolso inexistente → 404
+POST {{baseUrl}}/api/expenses/00000000-0000-0000-0000-000000000000/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Identificador que não é GUID → 404
+POST {{baseUrl}}/api/expenses/abc/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Outro Approver aprova o reembolso do Approver + Employee → 200 (só o dono fica impedido)
+POST {{baseUrl}}/api/expenses/{{decisaoDoAprovadorFuncionario.response.body.$.id}}/approve
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
