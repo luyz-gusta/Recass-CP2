@@ -401,4 +401,46 @@ A mutação 5 também revelou um teste fraco: os testes de domínio calculavam o
 
 ## Qualidade (I10)
 
-O workflow `code-quality` roda a cada push e publica o relatório como artefato. O mesmo script pode ser executado localmente com `pwsh ./scripts/Invoke-CodeQuality.ps1`. Score final a registrar na I10.
+O workflow `code-quality` roda a cada push e a cada pull request, e publica o relatório como artefato `code-quality-report`. O mesmo script roda localmente com `pwsh ./scripts/Invoke-CodeQuality.ps1` (exige PowerShell 7 e Gitleaks).
+
+**Resultado: 100/100**, sem nenhum finding (build, segurança, higiene, estilo e boas práticas com 20/20 cada). Esse foi o resultado em todos os PRs da I01 à I09 e na `main` final. A configuração de qualidade do template (`.editorconfig`, `Directory.Build.props`, workflow e scripts) não foi alterada.
+
+| Verificação | Resultado |
+|---|---|
+| `dotnet build` | 0 erros e 0 warnings (compilador, analisadores .NET e regras de estilo) |
+| `dotnet format --verify-no-changes --severity warn` | sem alterações pendentes nos dois projetos |
+| `dotnet test` | 404 casos de teste aprovados |
+| Gitleaks (histórico inteiro do repositório) | nenhum segredo encontrado |
+| Arquivos gerados (`bin/`, `obj/`, `*.db`, `.env`) | nenhum versionado |
+| `dotnet-ef migrations has-pending-model-changes` | modelo em sincronia com as migrations |
+
+**Validação ponta a ponta.** Na auditoria da I10, a API foi executada a partir da `main`, com o banco zerado, e passou por 55 verificações HTTP, todas com o status esperado:
+
+- cadastro e roles dos 7 perfis;
+- fluxo completo `Created → Updated → Submitted → Approved → Paid`, com o histórico lido pelo Auditor;
+- reprovação com justificativa;
+- `401` e `403` (sem token, sem role, Admin sem acesso funcional, Auditor escrevendo, autoaprovação e autopagamento);
+- `404` (reembolso de outro Employee, id trocado na URL, rascunho alheio, fora do escopo);
+- `409` (reenvio, nova decisão, pagamento repetido, pagar `Rejected` ou `Submitted`);
+- `400` (valor 0, data futura, descrição curta, categoria inexistente, `ownerId` ou `status` no corpo).
+
+## Decisões e concessões
+
+- **SQLite** como provider: não exige servidor e mantém o build e os testes independentes de banco. Como o SQLite não ordena `DateTimeOffset`, os horários são `DateTime` em UTC, com um conversor que garante `Kind = Utc`.
+- **Token bearer nativo do Identity** em vez de JWT: não há chave de assinatura para proteger. Em troca, as roles valem a partir do próximo login.
+- **Senha do Admin fora do repositório** (user-secrets ou variável de ambiente). O seed cria só as roles e o Admin, e é idempotente.
+- **Autorização em duas camadas:** atributo de role no controller e decisão contextual (role, ownership e estado) em `ExpenseAccessPolicy`, na camada de serviço. A visibilidade de leitura é uma expressão aplicada na consulta SQL.
+- **`404` para o que o usuário não enxerga:** reembolso inexistente e fora do escopo respondem igual, sem vazar a existência do recurso. **`403`** fica para falta de role e para autoaprovação/autopagamento.
+- **Campo desconhecido no JSON gera `400`:** proprietário, estado, atores e horários nunca vêm do cliente.
+- **Atomicidade e concorrência:** cada operação grava estado, histórico e pagamento num único `SaveChanges`, e o `ConcurrencyStamp` transforma alterações simultâneas em `409`.
+- **Testes unitários sem banco:** os serviços dependem de `IExpenseRepository` e de `TimeProvider`, substituídos por dublês em memória e por um relógio fixo.
+- **Fora do escopo,** conforme o enunciado: deploy, Docker, anexos, integração bancária, múltiplas moedas, aprovação multinível, notificações, reabertura, cancelamento e frontend.
+
+## Uso de Inteligência Artificial
+
+O grupo usou o **Claude Code** como assistente de desenvolvimento, conforme permitido no enunciado e em [docs/USO-DE-IA.md](docs/USO-DE-IA.md):
+
+- **Escopo:** apoio na implementação, nos testes e na documentação de cada issue.
+- **Revisão humana:** cada integrante revisou o código das próprias issues antes do merge e respondeu pelas decisões técnicas.
+- **Validação:** o comportamento foi confirmado com testes unitários, com o relatório de qualidade de cada PR e com requisições à API em execução, registradas nos PRs e em [docs/EVIDENCIAS-AUTORIZACAO.md](docs/EVIDENCIAS-AUTORIZACAO.md).
+- **Segredos:** nenhuma credencial ou dado pessoal foi incluído no repositório nem nos prompts.
