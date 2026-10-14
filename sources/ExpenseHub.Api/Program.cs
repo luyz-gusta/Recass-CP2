@@ -39,6 +39,7 @@ internal static class Program
         builder.Services.AddScoped<IAccountService, AccountService>();
         builder.Services.AddScoped<IUserAdminService, UserAdminService>();
         builder.Services.AddScoped<IExpenseService, ExpenseService>();
+        builder.Services.AddScoped<IExpenseWorkflowService, ExpenseWorkflowService>();
 
         builder.Services
             .AddIdentityCore<IdentityUser>(options =>
