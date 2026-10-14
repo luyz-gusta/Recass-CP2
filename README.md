@@ -134,7 +134,32 @@ O arquivo funciona com a extensão REST Client do VS Code ou com o Visual Studio
 
 ## Usuários e roles (I03)
 
-A completar na issue correspondente.
+| Rota | Quem acessa | Resultado |
+|---|---|---|
+| `POST /register` | público | `201` com o usuário criado **sem nenhuma role**. E-mail já cadastrado → `409`; senha fora da política → `400`, com as mensagens em português |
+| `GET /api/admin/users` | somente `Admin` | `200` com id, e-mail e roles de cada usuário |
+| `PUT /api/admin/users/{id}/roles` | somente `Admin` | `200` com o usuário atualizado |
+
+- **Sem roles no cadastro:** o cadastro não aceita roles. Um corpo com `roles`, ou qualquer outro campo desconhecido, é rejeitado com `400`. Todo usuário novo começa sem roles e, por isso, recebe `403` nas rotas de reembolso até um Admin atribuir uma role.
+- **Substituição de roles:** o `PUT .../roles` recebe o conjunto completo, por exemplo `{ "roles": ["Approver", "Employee"] }`, e substitui as roles atuais. `[]` remove todas.
+  - Só as roles `Admin`, `Employee`, `Approver`, `Finance` e `Auditor` são aceitas, sem diferenciar maiúsculas de minúsculas e ignorando duplicatas.
+  - Role desconhecida → `400`. Roles nunca são criadas implicitamente.
+  - Usuário inexistente → `404`.
+  - O Admin não pode remover a própria role Admin → `409`.
+- **Atomicidade:** remover roles, incluir roles e renovar o carimbo de segurança acontecem numa única transação.
+- **Novo login obrigatório:** as roles vão dentro do token, então **depois de uma alteração de roles o usuário precisa fazer login novamente**. O token antigo continua com as roles anteriores até expirar; `GET /api/me` mostra o que está no token atual.
+
+Usuários de demonstração criados pelo `.http` (todos com a senha `EXPENSEHUB_DEMO_PASS` do `.env`):
+
+| E-mail | Roles |
+|---|---|
+| `funcionario1@expensehub.local` | Employee |
+| `funcionario2@expensehub.local` | Employee |
+| `aprovador@expensehub.local` | Approver |
+| `financeiro@expensehub.local` | Finance |
+| `auditor@expensehub.local` | Auditor |
+| `aprovador.funcionario@expensehub.local` | Approver + Employee |
+| `financeiro.funcionario@expensehub.local` | Finance + Employee |
 
 ## Reembolsos (I04–I06)
 
