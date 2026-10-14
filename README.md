@@ -250,7 +250,32 @@ As evidências, com o status esperado, o observado e o teste unitário de cada c
 
 ## Aprovação, pagamento e histórico (I07–I08)
 
-A completar nas issues correspondentes.
+### Aprovar e reprovar (I07)
+
+| Rota | Quem acessa | Resultado |
+|---|---|---|
+| `POST /api/expenses/{id}/approve` | `Approver`, exceto o proprietário | `200` com o reembolso em `Approved`, `decidedById` e `decidedAtUtc`. Sem a role Approver → `403`; o próprio reembolso → `403`; inexistente ou rascunho de outra pessoa → `404`; fora de `Submitted` → `409` |
+| `POST /api/expenses/{id}/reject` | `Approver`, exceto o proprietário | `200` com o reembolso em `Rejected` e `rejectionReason`. Justificativa ausente ou fora de 10 a 500 caracteres → `400`; as demais respostas são iguais às da aprovação |
+
+Corpo da reprovação (único campo aceito):
+
+```json
+{ "justification": "Falta a nota fiscal da hospedagem; envie o comprovante." }
+```
+
+- **Transições:** só `Submitted` recebe decisão: `Submitted` → `Approved` ou `Submitted` → `Rejected`, e `Rejected` é final. A decisão é única: aprovar de novo, reprovar de novo ou trocar a decisão responde `409`, sem gravar histórico.
+- **Justificativa:** obrigatória na reprovação, com 10 a 500 caracteres contados sem os espaços nas pontas, e gravada sem eles no reembolso (`rejectionReason`) e no histórico. O DTO valida o corpo (`400` automático), o serviço valida de novo depois de remover os espaços, e o domínio (`Expense.Reject`) recusa justificativa inválida como defesa em profundidade.
+- **Quem decide:** só quem tem a role `Approver` e **não é o dono**. Quem acumula `Approver` + `Employee` decide sobre os reembolsos dos outros, mas recebe `403` no próprio (autoaprovação proibida). Employee, Finance, Auditor e Admin recebem `403`.
+- **Escopo:** reembolso inexistente ou rascunho de outra pessoa → `404`, porque o Approver não enxerga rascunhos.
+- **Ator e horário do servidor:** `decidedById` vem do token e `decidedAtUtc` do relógio do servidor (`TimeProvider`). O corpo aceita apenas `justification`: `decidedById`, `status` ou qualquer outro campo → `400`.
+- **Histórico e atomicidade:** a decisão grava `Approved` ou `Rejected` (estado anterior `Submitted`, com o aprovador, o horário UTC e, na reprovação, a justificativa) no mesmo `SaveChanges` da mudança de estado. Conflito de concorrência → `409`.
+- **Visibilidade depois da decisão:** um reembolso aprovado sai da visão do Approver (que só vê `Submitted`) e entra na do Finance (`Approved` e `Paid`).
+
+Ordem das verificações: role (`403`) → justificativa (`400`) → escopo (`404`) → ownership (`403`) → estado (`409`) → persistência. As requisições estão na seção "I07 — Aprovar e reprovar" do `.http`, e os status observados em [docs/EVIDENCIAS-AUTORIZACAO.md](docs/EVIDENCIAS-AUTORIZACAO.md).
+
+### Pagamento e histórico (I08)
+
+A completar na I08.
 
 ## Testes (I09)
 
