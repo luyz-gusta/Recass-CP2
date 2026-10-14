@@ -1,9 +1,70 @@
-@ExpenseHub_Api_HostAddress = http://localhost:5245
+# ExpenseHub — requisições de validação (VS Code REST Client ou Visual Studio 2022 17.12+).
+#
+# As senhas NÃO ficam neste arquivo. Crie sources/ExpenseHub.Api/.env (ignorado pelo Git) com:
+#   EXPENSEHUB_ADMIN_PASS=<a mesma senha configurada em AdminSeed:Password>
+#   EXPENSEHUB_DEMO_PASS=<senha dos usuários de demonstração, na política do Identity>
+# Veja a seção "Autenticação" do README.
+#
+# Ordem sugerida: execute as requisições de cima para baixo com o banco zerado.
 
-GET {{ExpenseHub_Api_HostAddress}}/health
+@baseUrl = http://localhost:5245
+@adminEmail = admin@expensehub.local
+@adminPassword = {{$dotenv EXPENSEHUB_ADMIN_PASS}}
+@demoPassword = {{$dotenv EXPENSEHUB_DEMO_PASS}}
+
+### Saúde da API (rota pública) → 200
+GET {{baseUrl}}/health
 Accept: application/json
 
-###
+# ============================================================
+# I02 — Identity, Admin e autenticação
+# ============================================================
 
-# Os endpoints do checkpoint estão definidos em docs/REQUISITOS.md.
-# Implemente e adicione aqui as requisições usadas para validar cada issue.
+### Login do Admin → 200 com accessToken
+# @name loginAdmin
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+### Usuário autenticado e roles do token → 200 com roles ["Admin"]
+GET {{baseUrl}}/api/me
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Senha incorreta → 401 (ProblemDetails)
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}-incorreta"
+}
+
+### E-mail inválido → 400
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "nao-e-email",
+  "password": "{{adminPassword}}"
+}
+
+### Campo desconhecido no corpo → 400 (o cliente não envia roles)
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}",
+  "roles": ["Admin"]
+}
+
+### Rota protegida sem token → 401 (ProblemDetails)
+GET {{baseUrl}}/api/me
+
+### Rota protegida com token inválido → 401
+GET {{baseUrl}}/api/me
+Authorization: Bearer token-invalido
