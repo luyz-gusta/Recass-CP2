@@ -1,47 +1,61 @@
-# Checkpoint 2 — ExpenseHub
+# ExpenseHub — Checkpoint 2 de C#
 
-Checkpoint de C# em grupos de até 3 pessoas para construção de uma Application Programming Interface (API) corporativa de reembolsos.
+[![code-quality](https://github.com/luyz-gusta/Recass-CP2/actions/workflows/build.yml/badge.svg)](https://github.com/luyz-gusta/Recass-CP2/actions/workflows/build.yml)
 
-O prazo de entrega é **13 de outubro de 2026**. O grupo deverá implementar autenticação, autorização, fluxo de aprovação e reprovação, pagamento simulado, histórico e testes unitários.
+API REST corporativa de reembolsos em ASP.NET Core 10. Funcionários registram despesas, aprovadores decidem, o financeiro registra pagamentos e auditores consultam todo o histórico. Cada operação é protegida por identidade autenticada, role, proprietário do reembolso, estado atual e regra de transição.
 
-## Criar seu repositório
+Enunciado, issues e rubrica: [Racass/checkpoint-csharpracass-expensehub](https://github.com/Racass/checkpoint-csharpracass-expensehub). Arquitetura e contratos internos: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
-1. Clique em **Use this template**.
-2. Selecione **Create a new repository**.
-3. Crie um repositório **público** em uma das contas do grupo.
-4. Adicione os demais integrantes como colaboradores.
-5. Clone o repositório.
+## Equipe e divisão
 
-Não use fork. As issues permanecem neste repositório original como especificação comum da turma.
+| Integrante | Issues |
+|---|---|
+| Luiz Gustavo da Silva ([@luyz-gusta](https://github.com/luyz-gusta)) | I01 Fundação e EF Core · I02 Identity, Admin e autenticação · I03 Cadastro e roles · I10 Qualidade (auditoria final) |
+| Pessoa 2 | I04 Criar e editar rascunho · I05 Enviar, listar e consultar · I06 Ownership e matriz de acesso |
+| Pessoa 3 | I07 Aprovar e reprovar · I08 Pagamento e histórico · I09 Testes unitários |
 
-Os commits serão utilizados para avaliar a participação. Todos os membros do grupo
-devem possuir mais de um commit no repositório.
+## Pré-requisitos
 
-## Fluxo de trabalho
+- [.NET SDK 10.0](https://dotnet.microsoft.com/download/dotnet/10.0)
+- Opcional, para rodar localmente o mesmo script de qualidade do CI: PowerShell 7 (`pwsh`) e [Gitleaks](https://github.com/gitleaks/gitleaks)
 
-Para cada issue:
+## Banco de dados
 
-1. leia os critérios no repositório original;
-2. crie uma branch com o identificador, por exemplo `i06-ownership`;
-3. implemente e valide a feature;
-4. abra uma pull request no seu próprio repositório;
-5. use um título como `I06 — Ownership e matriz de acesso`;
-6. adicione na descrição uma referência completa, como `Racass/checkpoint-csharpracass-expensehub#6`;
-7. não use `Closes`, `Fixes` ou `Resolves`, pois a issue original deve permanecer aberta;
-8. conclua a auto-revisão e faça o merge.
+| Item | Valor |
+|---|---|
+| Provider | SQLite |
+| Pacote | `Microsoft.EntityFrameworkCore.Sqlite` 10.0.12 (com `Microsoft.EntityFrameworkCore.Design` 10.0.12 para as migrations) |
+| Connection string | `ConnectionStrings:ExpenseHub` em `sources/ExpenseHub.Api/appsettings.json`: `Data Source=expensehub.db` |
+| Arquivo do banco | `sources/ExpenseHub.Api/expensehub.db`, criado ao executar a API. Não é versionado (`*.db` no `.gitignore`) |
+| Migrations | `sources/ExpenseHub.Api/Data/Migrations` |
 
-## Estrutura inicial
+**Criação e atualização.** A API aplica as migrations pendentes ao iniciar (`Database.MigrateAsync()`), então basta executá-la. Para aplicar manualmente, use a ferramenta local `dotnet-ef` declarada em `dotnet-tools.json`:
 
-```text
-sources/
-├── ExpenseHub.slnx
-├── ExpenseHub.Api/
-└── ExpenseHub.UnitTests/
+```shell
+dotnet tool restore
+dotnet tool run dotnet-ef database update --project sources/ExpenseHub.Api
 ```
 
-A solução começa sem Identity, banco, domínio ou testes funcionais. Toda implementação avaliada deve ser criada por você.
+**Recriar do zero.** Pare a API, apague `sources/ExpenseHub.Api/expensehub.db*` e inicie-a de novo.
 
-## Comandos
+**Nova migration** (toda mudança de modelo precisa de uma; nunca edite uma migration que já está na `main`):
+
+```shell
+dotnet tool run dotnet-ef migrations add NomeDaMudanca --project sources/ExpenseHub.Api --output-dir Data/Migrations
+dotnet tool run dotnet-ef migrations has-pending-model-changes --project sources/ExpenseHub.Api
+```
+
+**Categorias de despesa.** São dados de referência criados pela migration inicial, com IDs fixos:
+
+| Id | Categoria |
+|---:|---|
+| 1 | Alimentação |
+| 2 | Transporte |
+| 3 | Hospedagem |
+| 4 | Material de escritório |
+| 5 | Outros |
+
+## Como executar
 
 ```shell
 dotnet restore ./sources/ExpenseHub.slnx
@@ -50,44 +64,54 @@ dotnet test ./sources/ExpenseHub.slnx
 dotnet run --project ./sources/ExpenseHub.Api/ExpenseHub.Api.csproj
 ```
 
-O endpoint inicial `GET /health` existe apenas para confirmar que a aplicação inicia.
+A API sobe em `http://localhost:5245`. `GET /health` confirma que ela está no ar, e o documento OpenAPI fica em `/openapi/v1.json` (ambiente Development). As requisições de exemplo estão em [`sources/ExpenseHub.Api/ExpenseHub.Api.http`](sources/ExpenseHub.Api/ExpenseHub.Api.http).
 
-## Documentação
+## Estrutura
 
-- [Enunciado](docs/ENUNCIADO.md)
-- [Requisitos e contratos](docs/REQUISITOS.md)
-- [Rubrica](docs/RUBRICA.md)
-- [Matriz de autorização](docs/MATRIZ-AUTORIZACAO.md)
-- [Processo no GitHub](docs/PROCESSO-GITHUB.md)
-- [Uso de Inteligência Artificial](docs/USO-DE-IA.md)
-- [Regras do pipeline de qualidade](docs/code-quality-rules.md)
+```text
+sources/
+├── ExpenseHub.slnx
+├── ExpenseHub.Api/
+│   ├── Controllers/   endpoints HTTP (recebem DTOs, nunca entidades)
+│   ├── Dtos/          DTOs de entrada com validação declarativa
+│   ├── Contracts/     respostas da API
+│   ├── Domain/        entidades, estados e roles
+│   ├── Data/          DbContext, mapeamentos, migrations e repositório
+│   ├── Services/      regras de negócio e autorização contextual
+│   └── Http/          tradução de claims e de resultados para HTTP
+└── ExpenseHub.UnitTests/
+    ├── TestDoubles/   repositório em memória, relógio fixo e atores de teste
+    └── ...            testes por área
+```
 
-## Banco de dados
+Toda resposta de erro segue `ProblemDetails`. Campos desconhecidos no JSON (por exemplo `ownerId`, `status` ou `roles`) são rejeitados com `400`, o que impede mass assignment.
 
-Você pode utilizar Microsoft SQL Server LocalDB, Oracle Database, SQLite ou outro provider relacional compatível com Entity Framework Core.
+## Autenticação (I02)
 
-A escolha não gera pontos. Documente no README do seu repositório:
+A completar na issue correspondente.
 
-- provider e pacote utilizado;
-- configuração necessária;
-- criação ou atualização do banco;
-- como iniciar a aplicação.
+## Usuários e roles (I03)
 
-Não versione senhas, tokens ou connection strings sensíveis.
+A completar na issue correspondente.
 
-## Testes
+## Reembolsos (I04–I06)
 
-Somente testes unitários escritos por você entram na nota. Testes de integração, end-to-end ou de interface são permitidos, mas opcionais e sem pontuação.
+A completar nas issues correspondentes.
 
-Os testes unitários devem executar sem banco, rede ou serviço externo.
+## Aprovação, pagamento e histórico (I07–I08)
 
-## Entrega
+A completar nas issues correspondentes.
 
-Entregue:
+## Testes (I09)
 
-- URL do repositório público;
-- commit Secure Hash Algorithm (SHA) final;
-- integração contínua executada;
-- documentação atualizada.
+Testes unitários com MSTest, sem banco, rede ou serviço externo: os serviços dependem de `IExpenseRepository` e de `TimeProvider`, substituídos nos testes por `InMemoryExpenseRepository` e `FixedTimeProvider`.
 
-O projeto deve compilar sem erros e ser entregue sem warnings para receber a pontuação integral de Qualidade de Código.
+```shell
+dotnet test ./sources/ExpenseHub.slnx
+```
+
+Detalhamento da cobertura a completar na I09.
+
+## Qualidade (I10)
+
+O workflow `code-quality` roda a cada push e publica o relatório como artefato. O mesmo script pode ser executado localmente com `pwsh ./scripts/Invoke-CodeQuality.ps1`. Score final a registrar na I10.
