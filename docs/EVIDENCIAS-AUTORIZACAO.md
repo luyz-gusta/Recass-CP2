@@ -52,7 +52,7 @@ Este documento comprova a [matriz de autorização](MATRIZ-AUTORIZACAO.md): para
 | Auditor | criar | 403 | 403 | `ExpenseServiceCreateTests.CreateAsync_ActorWithoutEmployeeRole_ReturnsForbiddenAndSavesNothing` |
 | Admin | criar | 403 | 403 | `ExpenseServiceCreateTests.CreateAsync_ActorWithoutEmployeeRole_ReturnsForbiddenAndSavesNothing` |
 
-Atributo da rota: `ExpensesControllerAuthorizationTests.WriteActions_RequireEmployeeRole`.
+Atributo da rota: `ExpensesControllerAuthorizationTests.WriteAction_AuthorizeAttribute_RequiresEmployeeRole`.
 
 ## `PUT /api/expenses/{id}` (editar)
 
@@ -107,7 +107,7 @@ O filtro é aplicado na consulta ao banco (`ExpenseAccessPolicy.ReadScope` vira 
 | Auditor | todos | 200, 5 itens | 200, 5 itens | `ExpenseReadScopeTests.ReadScope_Auditor_SeesEverything`, `ExpenseServiceQueryTests.ListAsync_Auditor_ReturnsEverythingMostRecentFirst` |
 | Admin | Admin sozinho | 403 | 403 | `ExpenseServiceQueryTests.ListAsync_ActorWithoutReadRole_ReturnsForbidden`, `ExpenseReadScopeTests.ReadScope_AdminOnly_SeesNothing` |
 
-Atributo das rotas de leitura: `ExpensesControllerAuthorizationTests.ReadActions_RequireOneOfTheReaderRoles`. Coerência com a política: `ExpenseAccessPolicyTests.HasReadRole_EveryKnownRole_AgreesWithExpenseReadersConstant`.
+Atributo das rotas de leitura: `ExpensesControllerAuthorizationTests.ReadAction_AuthorizeAttribute_RequiresOneOfTheReaderRoles`. Coerência com a política: `ExpenseAccessPolicyTests.HasReadRole_EveryKnownRole_AgreesWithExpenseReadersConstant`.
 
 ## `GET /api/expenses/{id}` (detalhe)
 
@@ -142,7 +142,7 @@ Gerado pela seção "I07 — Aprovar e reprovar" do `.http`: 39 requisições ex
 |---|---|:---:|:---:|---|
 | Anônimo | aprovar e reprovar sem token | 401 | 401 e 401 | `ExpenseWorkflowControllerAuthorizationTests.ExpenseWorkflowController_EveryAction_DeclaresRolesAndNoneIsAnonymous` (o `401` é da `FallbackPolicy`) |
 | Sem role | reprovar | 403 | 403 | `ExpenseWorkflowServiceRejectTests.RejectAsync_ActorWithNoRole_ReturnsForbidden` |
-| Employee | aprovar | 403 | 403 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ActorWithoutApproverRole_ReturnsForbidden`, `ExpenseWorkflowControllerAuthorizationTests.DecisionActions_RequireApproverRole` |
+| Employee | aprovar | 403 | 403 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ActorWithoutApproverRole_ReturnsForbidden`, `ExpenseWorkflowControllerAuthorizationTests.DecisionAction_AuthorizeAttribute_RequiresApproverRole` |
 | Finance | aprovar | 403 | 403 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ActorWithoutApproverRole_ReturnsForbidden` |
 | Finance dono | reprovar (Finance + Employee, sem Approver) | 403 | 403 | `ExpenseWorkflowServiceRejectTests.RejectAsync_ActorWithoutApproverRole_ReturnsForbidden` |
 | Auditor | aprovar | 403 | 403 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ActorWithoutApproverRole_ReturnsForbidden` |
@@ -156,7 +156,7 @@ Gerado pela seção "I07 — Aprovar e reprovar" do `.http`: 39 requisições ex
 | Approver | aprovar ou reprovar um `Paid` (seção I08 do `.http`) | 409 | 409 e 409 | `ApproveAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus`, `RejectAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus` |
 | Approver | aprovar e reprovar o Draft de funcionario2 | 404 | 404 e 404 | `ApproveAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft`, `RejectAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft`, `ExpenseAccessPolicyTests.CanDecide_ApproverOnOthersDraft_ReturnsNotFound` |
 | Approver | id inexistente | 404 | 404 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_UnknownId_ReturnsNotFound` |
-| Approver | id que não é GUID | 404 | 404 | `ExpenseWorkflowControllerAuthorizationTests.DecisionActions_ArePostRoutesUnderExpenses` (restrição `{id:guid}`) |
+| Approver | id que não é GUID | 404 | 404 | `ExpenseWorkflowControllerAuthorizationTests.DecisionAction_RouteAttribute_IsPostUnderExpenseId` (restrição `{id:guid}`) |
 | Approver dono | aprovar e reprovar o **próprio** `Submitted` | 403 | 403 e 403 | `ApproveAsync_ApproverEmployeeOnOwnSubmitted_ReturnsForbiddenWithoutHistory`, `RejectAsync_ApproverEmployeeOnOwnSubmitted_ReturnsForbiddenWithoutHistory`, `ExpenseAccessPolicyTests.CanDecide_ApproverEmployeeOnOwnExpense_ReturnsForbiddenForEveryStatus` |
 | Approver dono | aprovar o `Submitted` de funcionario2 | 200 | 200 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ApproverEmployeeOnOthersSubmitted_Approves`, `ExpenseAccessPolicyTests.CanDecide_ApproverEmployeeOnOthersSubmitted_ReturnsAllowed` |
 | Approver | aprovar o `Submitted` do Approver dono (só o dono fica impedido) | 200 | 200 | `ExpenseAccessPolicyTests.CanDecide_ApproverOnOthersNonDraft_ReturnsAllowedForEveryStatus` |
@@ -180,7 +180,7 @@ Gerado pela seção "I08 — Pagamento e histórico" do `.http`: 41 requisiçõe
 |---|---|:---:|:---:|---|
 | Anônimo | pagar sem token | 401 | 401 | `ExpenseWorkflowControllerAuthorizationTests.ExpenseWorkflowController_EveryAction_DeclaresRolesAndNoneIsAnonymous` (o `401` é da `FallbackPolicy`) |
 | Sem role | pagar | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithNoRole_ReturnsForbidden` |
-| Employee | pagar | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithoutFinanceRole_ReturnsForbidden`, `ExpenseWorkflowControllerAuthorizationTests.PayAction_RequiresFinanceRole` |
+| Employee | pagar | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithoutFinanceRole_ReturnsForbidden`, `ExpenseWorkflowControllerAuthorizationTests.PayAction_AuthorizeAttribute_RequiresFinanceRole` |
 | Approver | pagar | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithoutFinanceRole_ReturnsForbidden` |
 | Auditor | pagar (consulta, mas não altera) | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithoutFinanceRole_ReturnsForbidden` |
 | Admin | pagar | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithoutFinanceRole_ReturnsForbidden`, `ExpenseAccessPolicyTests.CanPay_RoleWithoutFinance_ReturnsForbiddenForEveryOwnerAndStatus` |
@@ -190,7 +190,7 @@ Gerado pela seção "I08 — Pagamento e histórico" do `.http`: 41 requisiçõe
 | Finance | pagar o `Rejected` da I07 | 409 | 409 | `ExpenseWorkflowServicePayTests.PayAsync_ExpenseNotApproved_ReturnsConflictWithoutPayment` |
 | Finance | pagar o Draft de funcionario2 | 404 | 404 | `ExpenseWorkflowServicePayTests.PayAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft`, `ExpenseAccessPolicyTests.CanPay_FinanceOnOthersDraft_ReturnsNotFound` |
 | Finance | id inexistente | 404 | 404 | `ExpenseWorkflowServicePayTests.PayAsync_UnknownId_ReturnsNotFound` |
-| Finance | id que não é GUID | 404 | 404 | `ExpenseWorkflowControllerAuthorizationTests.PayAction_IsPostRouteUnderExpenses` (restrição `{id:guid}`) |
+| Finance | id que não é GUID | 404 | 404 | `ExpenseWorkflowControllerAuthorizationTests.PayAction_RouteAttribute_IsPostUnderExpenseId` (restrição `{id:guid}`) |
 | Finance | pagar o `Approved` do Finance dono (só o dono fica impedido) | 200 | 200 | `ExpenseAccessPolicyTests.CanPay_FinanceOnOthersNonDraft_ReturnsAllowedForEveryStatus` |
 | Finance dono | pagar o **próprio** `Approved` | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_FinanceEmployeeOnOwnApproved_ReturnsForbiddenWithoutPayment`, `ExpenseAccessPolicyTests.CanPay_FinanceEmployeeOnOwnExpense_ReturnsForbiddenForEveryStatus` |
 | Finance dono | pagar o `Approved` de funcionario2 | 200 | 200 | `ExpenseWorkflowServicePayTests.PayAsync_FinanceEmployeeOnOthersApproved_Pays`, `ExpenseAccessPolicyTests.CanPay_FinanceEmployeeOnOthersApproved_ReturnsAllowed` |
@@ -208,7 +208,7 @@ Mesma visibilidade do detalhe (`ReadScope` aplicado na consulta). Testes em `Wor
 |---|---|:---:|:---:|---|
 | Anônimo | sem token | 401 | 401 | `ExpenseWorkflowControllerAuthorizationTests.ExpenseWorkflowController_EveryAction_DeclaresRolesAndNoneIsAnonymous` |
 | Sem role | `Paid` de funcionario1 | 403 | 403 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_ActorWithoutReadRole_ReturnsForbidden` |
-| Admin | `Paid` de funcionario1 | 403 | 403 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_ActorWithoutReadRole_ReturnsForbidden`, `ExpenseWorkflowControllerAuthorizationTests.HistoryAction_RequiresOneOfTheReaderRoles` |
+| Admin | `Paid` de funcionario1 | 403 | 403 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_ActorWithoutReadRole_ReturnsForbidden`, `ExpenseWorkflowControllerAuthorizationTests.HistoryAction_AuthorizeAttribute_RequiresOneOfTheReaderRoles` |
 | Employee dono | próprio `Paid` (fluxo completo) | 200 | 200, 5 entradas | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_Owner_SeesOwnHistoryInAnyStatus` |
 | Employee dono | próprio `Rejected` (funcionario2, da I07) | 200 | 200, 3 entradas | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_Rejection_ExposesJustification` |
 | Employee outro | `Paid` de funcionario1 | 404 | 404 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_AnotherEmployee_ReturnsNotFound` |

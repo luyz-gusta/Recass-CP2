@@ -20,21 +20,21 @@ public sealed class ExpenseWorkflowControllerAuthorizationTests
     [TestMethod]
     [DataRow(nameof(ExpenseWorkflowController.ApproveAsync))]
     [DataRow(nameof(ExpenseWorkflowController.RejectAsync))]
-    public void DecisionActions_RequireApproverRole(string action)
+    public void DecisionAction_AuthorizeAttribute_RequiresApproverRole(string action)
     {
         Assert.AreEqual(AppRoles.Approver, RolesOf(action));
     }
 
     /// <summary>Registrar pagamento exige somente a role Finance.</summary>
     [TestMethod]
-    public void PayAction_RequiresFinanceRole()
+    public void PayAction_AuthorizeAttribute_RequiresFinanceRole()
     {
         Assert.AreEqual(AppRoles.Finance, RolesOf(nameof(ExpenseWorkflowController.PayAsync)));
     }
 
     /// <summary>O histórico exige uma das quatro roles de leitura; Admin não está entre elas.</summary>
     [TestMethod]
-    public void HistoryAction_RequiresOneOfTheReaderRoles()
+    public void HistoryAction_AuthorizeAttribute_RequiresOneOfTheReaderRoles()
     {
         string roles = RolesOf(nameof(ExpenseWorkflowController.GetHistoryAsync));
 
@@ -46,7 +46,7 @@ public sealed class ExpenseWorkflowControllerAuthorizationTests
     [TestMethod]
     [DataRow(nameof(ExpenseWorkflowController.ApproveAsync), "{id:guid}/approve")]
     [DataRow(nameof(ExpenseWorkflowController.RejectAsync), "{id:guid}/reject")]
-    public void DecisionActions_ArePostRoutesUnderExpenses(string action, string template)
+    public void DecisionAction_RouteAttribute_IsPostUnderExpenseId(string action, string template)
     {
         HttpPostAttribute? post = ActionOf(action).GetCustomAttribute<HttpPostAttribute>();
 
@@ -57,7 +57,7 @@ public sealed class ExpenseWorkflowControllerAuthorizationTests
 
     /// <summary>O pagamento é <c>POST /api/expenses/{id}/pay</c>, com id GUID.</summary>
     [TestMethod]
-    public void PayAction_IsPostRouteUnderExpenses()
+    public void PayAction_RouteAttribute_IsPostUnderExpenseId()
     {
         HttpPostAttribute? post = ActionOf(nameof(ExpenseWorkflowController.PayAsync)).GetCustomAttribute<HttpPostAttribute>();
 
@@ -67,7 +67,7 @@ public sealed class ExpenseWorkflowControllerAuthorizationTests
 
     /// <summary>O histórico é <c>GET /api/expenses/{id}/history</c>, com id GUID.</summary>
     [TestMethod]
-    public void HistoryAction_IsGetRouteUnderExpenses()
+    public void HistoryAction_RouteAttribute_IsGetUnderExpenseId()
     {
         HttpGetAttribute? get = ActionOf(nameof(ExpenseWorkflowController.GetHistoryAsync)).GetCustomAttribute<HttpGetAttribute>();
 
