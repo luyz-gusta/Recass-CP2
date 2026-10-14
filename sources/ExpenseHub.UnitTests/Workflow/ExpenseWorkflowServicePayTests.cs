@@ -31,7 +31,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_OthersApproved_PaysWithPayerAndServerTime()
     {
-        Expense expense = SeedApproved(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Approved);
         _clock.Advance(TimeSpan.FromDays(2));
 
         ServiceResult<ExpenseResponse> result = await _service.PayAsync(TestActors.Finance, expense.Id, CancellationToken.None);
@@ -46,7 +46,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_OthersApproved_RecordsPaymentWithAmountPayerAndTime()
     {
-        Expense expense = SeedApproved(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Approved);
         _clock.Advance(TimeSpan.FromDays(2));
 
         await _service.PayAsync(TestActors.Finance, expense.Id, CancellationToken.None);
@@ -62,7 +62,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_OthersApproved_RecordsPaidHistoryInSingleSave()
     {
-        Expense expense = SeedApproved(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Approved);
         _clock.Advance(TimeSpan.FromDays(2));
 
         await _service.PayAsync(TestActors.Finance, expense.Id, CancellationToken.None);
@@ -81,7 +81,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_FinanceEmployeeOnOthersApproved_Pays()
     {
-        Expense expense = SeedApproved(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Approved);
 
         ServiceResult<ExpenseResponse> result = await _service.PayAsync(TestActors.FinanceEmployee, expense.Id, CancellationToken.None);
 
@@ -93,7 +93,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_FinanceEmployeeOnOwnApproved_ReturnsForbiddenWithoutPayment()
     {
-        Expense expense = SeedApproved(TestActors.FinanceEmployee);
+        Expense expense = Seed(TestActors.FinanceEmployee, ExpenseStatus.Approved);
 
         ServiceResult<ExpenseResponse> result = await _service.PayAsync(TestActors.FinanceEmployee, expense.Id, CancellationToken.None);
 
@@ -110,7 +110,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [DataRow(AppRoles.Admin)]
     public async Task PayAsync_ActorWithoutFinanceRole_ReturnsForbidden(string role)
     {
-        Expense expense = SeedApproved(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Approved);
         Actor actor = TestActors.Create("user-without-finance", role);
 
         ServiceResult<ExpenseResponse> result = await _service.PayAsync(actor, expense.Id, CancellationToken.None);
@@ -124,7 +124,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_ActorWithNoRole_ReturnsForbidden()
     {
-        Expense expense = SeedApproved(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Approved);
 
         ServiceResult<ExpenseResponse> result = await _service.PayAsync(TestActors.NoRole, expense.Id, CancellationToken.None);
 
@@ -146,8 +146,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft()
     {
-        Expense draft = TestExpenses.Draft(TestActors.Employee1.UserId, _clock.UtcNow);
-        _repository.Seed(draft);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.PayAsync(TestActors.Finance, draft.Id, CancellationToken.None);
 
@@ -163,7 +162,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task PayAsync_ExpenseNotApproved_ReturnsConflictWithoutPayment(ExpenseStatus status)
     {
-        Expense expense = SeedInStatus(TestActors.Employee1, status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<ExpenseResponse> result = await _service.PayAsync(TestActors.Finance, expense.Id, CancellationToken.None);
 
@@ -176,7 +175,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_SecondPayment_ReturnsConflictWithSinglePaymentAndPaidHistory()
     {
-        Expense expense = SeedApproved(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Approved);
         await _service.PayAsync(TestActors.Finance, expense.Id, CancellationToken.None);
 
         ServiceResult<ExpenseResponse> second = await _service.PayAsync(TestActors.FinanceEmployee, expense.Id, CancellationToken.None);
@@ -194,7 +193,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_SaveFails_PropagatesAndPersistsNeitherPaymentNorHistory()
     {
-        Expense expense = SeedApproved(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Approved);
         _repository.FailNextSave = true;
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
@@ -209,7 +208,7 @@ public sealed class ExpenseWorkflowServicePayTests
     [TestMethod]
     public async Task PayAsync_ConcurrencyConflictOnSave_ReturnsConflictWithoutPaymentOrHistory()
     {
-        Expense expense = SeedApproved(TestActors.Employee1);
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Approved);
         _repository.ConflictOnNextSave = true;
 
         ServiceResult<ExpenseResponse> result = await _service.PayAsync(TestActors.Finance, expense.Id, CancellationToken.None);
@@ -219,33 +218,9 @@ public sealed class ExpenseWorkflowServicePayTests
         Assert.IsEmpty(_repository.History);
     }
 
-    private Expense SeedApproved(Actor owner)
+    private Expense Seed(Actor owner, ExpenseStatus status)
     {
-        return SeedInStatus(owner, ExpenseStatus.Approved);
-    }
-
-    /// <summary>Leva um reembolso até o estado pedido pelas transições reais do domínio e o grava como confirmado.</summary>
-    private Expense SeedInStatus(Actor owner, ExpenseStatus status)
-    {
-        Expense expense = TestExpenses.Draft(owner.UserId, _clock.UtcNow);
-        expense.Submit(_clock.UtcNow);
-
-        if (status == ExpenseStatus.Rejected)
-        {
-            expense.Reject(TestActors.Approver.UserId, "Comprovante ilegível, envie novamente.", _clock.UtcNow);
-        }
-        else if (status is ExpenseStatus.Approved or ExpenseStatus.Paid)
-        {
-            expense.Approve(TestActors.Approver.UserId, _clock.UtcNow);
-        }
-
-        if (status == ExpenseStatus.Paid)
-        {
-            expense.MarkAsPaid(TestActors.Finance.UserId, _clock.UtcNow);
-        }
-
-        _repository.Seed(expense);
-        return expense;
+        return _repository.Seed(ExpenseScenario.Of(owner).At(_clock.UtcNow).InStatus(status));
     }
 
     private void AssertNothingSaved()

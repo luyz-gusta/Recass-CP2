@@ -198,8 +198,6 @@ public sealed class ExpenseServiceQueryTests
 
     private Expense Seed(Actor owner, ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft(owner.UserId, _clock.UtcNow), status);
-        _repository.Seed(expense);
-        return expense;
+        return _repository.Seed(ExpenseScenario.Of(owner).At(_clock.UtcNow).InStatus(status));
     }
 }

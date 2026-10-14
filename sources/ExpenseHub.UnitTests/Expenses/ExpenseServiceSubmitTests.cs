@@ -31,7 +31,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task SubmitAsync_OwnerDraft_ChangesStatusAndFillsSubmissionTime()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         _clock.Advance(TimeSpan.FromHours(3));
 
         ServiceResult<ExpenseResponse> result = await _service.SubmitAsync(TestActors.Employee1, draft.Id, CancellationToken.None);
@@ -47,7 +47,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task SubmitAsync_OwnerDraft_RecordsSubmittedHistoryInSingleSave()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         _clock.Advance(TimeSpan.FromHours(3));
 
         await _service.SubmitAsync(TestActors.Employee1, draft.Id, CancellationToken.None);
@@ -66,7 +66,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task SubmitAsync_ApproverEmployeeOnOwnDraft_Succeeds()
     {
-        Expense draft = SeedDraft(TestActors.ApproverEmployee);
+        Expense draft = Seed(TestActors.ApproverEmployee, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.SubmitAsync(TestActors.ApproverEmployee, draft.Id, CancellationToken.None);
 
@@ -78,7 +78,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task SubmitAsync_SecondSubmission_ReturnsConflictWithSingleSubmittedHistory()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         await _service.SubmitAsync(TestActors.Employee1, draft.Id, CancellationToken.None);
 
         ServiceResult<ExpenseResponse> second = await _service.SubmitAsync(TestActors.Employee1, draft.Id, CancellationToken.None);
@@ -96,7 +96,7 @@ public sealed class ExpenseServiceSubmitTests
     [DataRow(ExpenseStatus.Paid)]
     public async Task SubmitAsync_ExpenseNotInDraft_ReturnsConflictAndKeepsStatus(ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(SeedDraft(TestActors.Employee1), status);
+        Expense expense = Seed(TestActors.Employee1, status);
 
         ServiceResult<ExpenseResponse> result = await _service.SubmitAsync(TestActors.Employee1, expense.Id, CancellationToken.None);
 
@@ -109,7 +109,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task SubmitAsync_AnotherEmployeesDraft_ReturnsNotFoundAndKeepsDraft()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.SubmitAsync(TestActors.Employee2, draft.Id, CancellationToken.None);
 
@@ -122,7 +122,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task SubmitAsync_ApproverEmployeeOnAnotherDraft_ReturnsNotFound()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.SubmitAsync(TestActors.ApproverEmployee, draft.Id, CancellationToken.None);
 
@@ -148,7 +148,7 @@ public sealed class ExpenseServiceSubmitTests
     [DataRow(AppRoles.Admin)]
     public async Task SubmitAsync_ActorWithoutEmployeeRole_ReturnsForbidden(string role)
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         Actor actor = TestActors.Create("user-without-employee", role);
 
         ServiceResult<ExpenseResponse> result = await _service.SubmitAsync(actor, draft.Id, CancellationToken.None);
@@ -162,7 +162,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task SubmitAsync_ActorWithNoRole_ReturnsForbidden()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
 
         ServiceResult<ExpenseResponse> result = await _service.SubmitAsync(TestActors.NoRole, draft.Id, CancellationToken.None);
 
@@ -174,7 +174,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task UpdateAsync_AfterSubmission_ReturnsConflictWithoutNewHistory()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         await _service.SubmitAsync(TestActors.Employee1, draft.Id, CancellationToken.None);
         UpdateExpenseRequest request = new()
         {
@@ -195,7 +195,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task SubmitAsync_ConcurrencyConflictOnSave_ReturnsConflictWithoutHistory()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         _repository.ConflictOnNextSave = true;
 
         ServiceResult<ExpenseResponse> result = await _service.SubmitAsync(TestActors.Employee1, draft.Id, CancellationToken.None);
@@ -208,7 +208,7 @@ public sealed class ExpenseServiceSubmitTests
     [TestMethod]
     public async Task SubmitAsync_SaveFails_PersistsNoHistory()
     {
-        Expense draft = SeedDraft(TestActors.Employee1);
+        Expense draft = Seed(TestActors.Employee1, ExpenseStatus.Draft);
         _repository.FailNextSave = true;
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
@@ -217,11 +217,9 @@ public sealed class ExpenseServiceSubmitTests
         Assert.IsEmpty(_repository.History);
     }
 
-    private Expense SeedDraft(Actor owner)
+    private Expense Seed(Actor owner, ExpenseStatus status)
     {
-        Expense draft = TestExpenses.Draft(owner.UserId, _clock.UtcNow);
-        _repository.Seed(draft);
-        return draft;
+        return _repository.Seed(ExpenseScenario.Of(owner).At(_clock.UtcNow).InStatus(status));
     }
 
     private void AssertNothingSaved()

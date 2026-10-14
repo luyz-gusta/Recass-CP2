@@ -182,9 +182,7 @@ public sealed class ExpenseReadScopeTests
 
     private Expense Seed(Actor owner, ExpenseStatus status)
     {
-        Expense expense = TestExpenses.InStatus(TestExpenses.Draft(owner.UserId), status);
-        _repository.Seed(expense);
-        return expense;
+        return _repository.Seed(ExpenseScenario.Of(owner).InStatus(status));
     }
 
     private async Task<IReadOnlyList<Guid>> VisibleToAsync(Actor actor)
