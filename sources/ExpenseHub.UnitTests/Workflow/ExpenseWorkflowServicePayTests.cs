@@ -102,6 +102,20 @@ public sealed class ExpenseWorkflowServicePayTests
         AssertNothingSaved();
     }
 
+    /// <summary>Nenhuma combinação de roles libera o autopagamento: Finance + Approver + Employee no próprio reembolso também recebe 403.</summary>
+    [TestMethod]
+    public async Task PayAsync_EveryWorkflowRoleOnOwnApproved_ReturnsForbiddenWithoutPayment()
+    {
+        Actor owner = TestActors.Create("all-roles-1", AppRoles.Employee, AppRoles.Approver, AppRoles.Finance);
+        Expense expense = Seed(owner, ExpenseStatus.Approved);
+
+        ServiceResult<ExpenseResponse> result = await _service.PayAsync(owner, expense.Id, CancellationToken.None);
+
+        Assert.AreEqual(ServiceError.Forbidden, result.Error);
+        Assert.AreEqual(ExpenseStatus.Approved, expense.Status);
+        AssertNothingSaved();
+    }
+
     /// <summary>Roles sem Finance recebem 403 (Employee, Approver, Auditor e Admin não pagam), e nada muda.</summary>
     [TestMethod]
     [DataRow(AppRoles.Employee)]
