@@ -46,7 +46,8 @@ internal static class Program
             })
             .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<ExpenseHubDbContext>()
-            .AddSignInManager();
+            .AddSignInManager()
+            .AddErrorDescriber<PortugueseIdentityErrorDescriber>();
 
         // Token bearer nativo do Identity: não depende de chave de assinatura configurada.
         builder.Services
