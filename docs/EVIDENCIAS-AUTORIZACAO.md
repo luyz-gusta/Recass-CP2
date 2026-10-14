@@ -7,6 +7,7 @@ Este documento comprova a [matriz de autorização](MATRIZ-AUTORIZACAO.md): para
 - API local em `http://localhost:5245`, com o banco SQLite **zerado** (sem `expensehub.db`) e os sete usuários de demonstração criados por `POST /register` e `PUT /api/admin/users/{id}/roles`, como na seção I03 do [`.http`](../sources/ExpenseHub.Api/ExpenseHub.Api.http). Cada perfil fez login depois de receber a role (as roles vão dentro do token).
 - 63 requisições (cada linha das tabelas de criar, editar, enviar, listar e detalhar abaixo), todas com o status esperado. As mesmas requisições estão na seção "I06 — Matriz de acesso" do `.http`, para o professor repetir.
 - Aprovar e reprovar (I07): 39 requisições da seção "I07 — Aprovar e reprovar" do `.http`, executadas em seguida no mesmo banco, todas com o status esperado.
+- Pagar e consultar o histórico (I08): 41 requisições da seção "I08 — Pagamento e histórico" do `.http`, executadas por último no mesmo banco, todas com o status esperado.
 - Os testes unitários citados ficam em `sources/ExpenseHub.UnitTests`. A 1ª camada (atributo `[Authorize(Roles = ...)]` no controller) é validada por `ExpensesControllerAuthorizationTests`; as demais (role, ownership e estado no **serviço**) por `ExpenseAccessPolicyTests`, `ExpenseReadScopeTests` e pelos testes de serviço.
 
 ## Perfis
@@ -152,7 +153,7 @@ Gerado pela seção "I07 — Aprovar e reprovar" do `.http`: 39 requisições ex
 | Approver | reprovar um `Approved` | 409 | 409 | `ExpenseWorkflowServiceRejectTests.RejectAsync_AfterApproval_ReturnsConflictAndKeepsApproval` |
 | Approver | reprovar de novo o que já reprovou | 409 | 409 | `ExpenseWorkflowServiceRejectTests.RejectAsync_SecondRejection_ReturnsConflictWithSingleRejectedHistory` |
 | Approver | aprovar um `Rejected` | 409 | 409 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_AfterRejection_ReturnsConflictAndKeepsRejection` |
-| Approver | aprovar ou reprovar um `Paid` | 409 | a validar na I08 (o pagamento chega na I08) | `ApproveAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus`, `RejectAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus` |
+| Approver | aprovar ou reprovar um `Paid` (seção I08 do `.http`) | 409 | 409 e 409 | `ApproveAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus`, `RejectAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus` |
 | Approver | aprovar e reprovar o Draft de funcionario2 | 404 | 404 e 404 | `ApproveAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft`, `RejectAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft`, `ExpenseAccessPolicyTests.CanDecide_ApproverOnOthersDraft_ReturnsNotFound` |
 | Approver | id inexistente | 404 | 404 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_UnknownId_ReturnsNotFound` |
 | Approver | id que não é GUID | 404 | 404 | `ExpenseWorkflowControllerAuthorizationTests.DecisionActions_ArePostRoutesUnderExpenses` (restrição `{id:guid}`) |
@@ -171,35 +172,66 @@ Detalhes observados nas respostas de sucesso:
 - **Visibilidade depois da decisão:** o Finance passou a ler o reembolso aprovado (`200`) e o Approver deixou de lê-lo (`404`), porque o Approver só vê `Submitted`.
 - **Ordem das verificações:** sem a role, até uma justificativa inválida responde `403` (`RejectAsync_ActorWithoutApproverRoleAndInvalidJustification_ReturnsForbidden`); com a role, a justificativa inválida responde `400` antes de procurar o reembolso (`RejectAsync_InvalidJustificationOnUnknownId_ReturnsValidation`).
 
-## Rotas da I08 (a validar)
+## `POST /api/expenses/{id}/pay` (I08)
 
-A política contextual já está pronta e testada (`ExpenseAccessPolicy.CanPay` e `ReadScope`, com todos os estados, donos e roles em `ExpenseAccessPolicyTests` e `ExpenseReadScopeTests`). Estas rotas ficam para a Pessoa 3 completar com o status **observado** e o teste do serviço, depois da I08. O esperado abaixo segue a [matriz](MATRIZ-AUTORIZACAO.md) e a ordem de decisão acima.
-
-### `POST /api/expenses/{id}/pay`
+Gerado pela seção "I08 — Pagamento e histórico" do `.http`: 41 requisições executadas logo depois das seções I02 a I07, no mesmo banco zerado, todas com o status esperado. Os testes de serviço ficam em `Workflow/ExpenseWorkflowServicePayTests`, os do domínio em `ExpensePaymentTests` e a 1ª camada em `ExpenseWorkflowControllerAuthorizationTests`.
 
 | Perfil | Cenário | Esperado | Observado | Teste unitário |
 |---|---|:---:|:---:|---|
-| Anônimo | qualquer | 401 | a validar na I08 | a validar na I08 |
-| Sem role, Employee, Approver, Auditor, Admin | qualquer | 403 | a validar na I08 | `ExpenseAccessPolicyTests.CanPay_RoleWithoutFinance_ReturnsForbiddenForEveryOwnerAndStatus` |
-| Finance | `Approved` de outra pessoa | 200 | a validar na I08 | `ExpenseAccessPolicyTests.CanPay_FinanceOnOthersNonDraft_ReturnsAllowedForEveryStatus` |
-| Finance | Draft de outra pessoa | 404 | a validar na I08 | `ExpenseAccessPolicyTests.CanPay_FinanceOnOthersDraft_ReturnsNotFound` |
-| Finance | `Submitted`, `Rejected` ou `Paid` de outra pessoa | 409 | a validar na I08 | a validar na I08 |
-| Finance dono | o **próprio** reembolso, em qualquer estado | 403 | a validar na I08 | `ExpenseAccessPolicyTests.CanPay_FinanceEmployeeOnOwnExpense_ReturnsForbiddenForEveryStatus` |
-| Finance dono | `Approved` de outra pessoa | 200 | a validar na I08 | `ExpenseAccessPolicyTests.CanPay_FinanceEmployeeOnOthersApproved_ReturnsAllowed` |
+| Anônimo | pagar sem token | 401 | 401 | `ExpenseWorkflowControllerAuthorizationTests.ExpenseWorkflowController_EveryAction_DeclaresRolesAndNoneIsAnonymous` (o `401` é da `FallbackPolicy`) |
+| Sem role | pagar | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithNoRole_ReturnsForbidden` |
+| Employee | pagar | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithoutFinanceRole_ReturnsForbidden`, `ExpenseWorkflowControllerAuthorizationTests.PayAction_RequiresFinanceRole` |
+| Approver | pagar | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithoutFinanceRole_ReturnsForbidden` |
+| Auditor | pagar (consulta, mas não altera) | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithoutFinanceRole_ReturnsForbidden` |
+| Admin | pagar | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_ActorWithoutFinanceRole_ReturnsForbidden`, `ExpenseAccessPolicyTests.CanPay_RoleWithoutFinance_ReturnsForbiddenForEveryOwnerAndStatus` |
+| Finance | pagar o `Approved` de funcionario1 (fluxo completo) | 200 | 200 | `ExpenseWorkflowServicePayTests.PayAsync_OthersApproved_PaysWithPayerAndServerTime`, `PayAsync_OthersApproved_RecordsPaymentWithAmountPayerAndTime`, `PayAsync_OthersApproved_RecordsPaidHistoryInSingleSave` |
+| Finance | pagar de novo o mesmo reembolso | 409 | 409 | `ExpenseWorkflowServicePayTests.PayAsync_SecondPayment_ReturnsConflictWithSinglePaymentAndPaidHistory` |
+| Finance | pagar um `Submitted` (antes da aprovação e o enviado da I06) | 409 | 409 e 409 | `ExpenseWorkflowServicePayTests.PayAsync_ExpenseNotApproved_ReturnsConflictWithoutPayment` |
+| Finance | pagar o `Rejected` da I07 | 409 | 409 | `ExpenseWorkflowServicePayTests.PayAsync_ExpenseNotApproved_ReturnsConflictWithoutPayment` |
+| Finance | pagar o Draft de funcionario2 | 404 | 404 | `ExpenseWorkflowServicePayTests.PayAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft`, `ExpenseAccessPolicyTests.CanPay_FinanceOnOthersDraft_ReturnsNotFound` |
+| Finance | id inexistente | 404 | 404 | `ExpenseWorkflowServicePayTests.PayAsync_UnknownId_ReturnsNotFound` |
+| Finance | id que não é GUID | 404 | 404 | `ExpenseWorkflowControllerAuthorizationTests.PayAction_IsPostRouteUnderExpenses` (restrição `{id:guid}`) |
+| Finance | pagar o `Approved` do Finance dono (só o dono fica impedido) | 200 | 200 | `ExpenseAccessPolicyTests.CanPay_FinanceOnOthersNonDraft_ReturnsAllowedForEveryStatus` |
+| Finance dono | pagar o **próprio** `Approved` | 403 | 403 | `ExpenseWorkflowServicePayTests.PayAsync_FinanceEmployeeOnOwnApproved_ReturnsForbiddenWithoutPayment`, `ExpenseAccessPolicyTests.CanPay_FinanceEmployeeOnOwnExpense_ReturnsForbiddenForEveryStatus` |
+| Finance dono | pagar o `Approved` de funcionario2 | 200 | 200 | `ExpenseWorkflowServicePayTests.PayAsync_FinanceEmployeeOnOthersApproved_Pays`, `ExpenseAccessPolicyTests.CanPay_FinanceEmployeeOnOthersApproved_ReturnsAllowed` |
 
-### `GET /api/expenses/{id}/history`
+Detalhes observados:
 
-Mesma visibilidade do detalhe (`ReadScope`).
+- **Ator e horário do servidor:** o pagamento devolveu `paidById` igual ao id do `financeiro` e `paidAtUtc` com o horário do servidor; a rota não tem corpo.
+- **Atomicidade:** `PayAsync_SaveFails_PropagatesAndPersistsNeitherPaymentNorHistory` faz a gravação falhar e confirma que nem o pagamento nem o histórico ficam gravados; `PayAsync_ConcurrencyConflictOnSave_ReturnsConflictWithoutPaymentOrHistory` cobre o conflito de concorrência (`409`). Na API real, 12 pagamentos simultâneos do mesmo reembolso aprovado responderam um `200` e onze `409`, e o banco ficou com um único `PaymentRecord`, um único reembolso `Paid` e um único histórico `Paid`.
+
+## `GET /api/expenses/{id}/history` (I08)
+
+Mesma visibilidade do detalhe (`ReadScope` aplicado na consulta). Testes em `Workflow/ExpenseWorkflowServiceHistoryTests`.
 
 | Perfil | Cenário | Esperado | Observado | Teste unitário |
 |---|---|:---:|:---:|---|
-| Anônimo | qualquer | 401 | a validar na I08 | a validar na I08 |
-| Sem role, Admin | qualquer | 403 | a validar na I08 | a validar na I08 |
-| Employee dono | próprio reembolso | 200 | a validar na I08 | a validar na I08 |
-| Employee outro | reembolso alheio | 404 | a validar na I08 | a validar na I08 |
-| Approver | `Submitted` / Draft alheio | 200 / 404 | a validar na I08 | a validar na I08 |
-| Finance | `Approved` ou `Paid` / `Submitted` | 200 / 404 | a validar na I08 | a validar na I08 |
-| Auditor | qualquer | 200 | a validar na I08 | a validar na I08 |
+| Anônimo | sem token | 401 | 401 | `ExpenseWorkflowControllerAuthorizationTests.ExpenseWorkflowController_EveryAction_DeclaresRolesAndNoneIsAnonymous` |
+| Sem role | `Paid` de funcionario1 | 403 | 403 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_ActorWithoutReadRole_ReturnsForbidden` |
+| Admin | `Paid` de funcionario1 | 403 | 403 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_ActorWithoutReadRole_ReturnsForbidden`, `ExpenseWorkflowControllerAuthorizationTests.HistoryAction_RequiresOneOfTheReaderRoles` |
+| Employee dono | próprio `Paid` (fluxo completo) | 200 | 200, 5 entradas | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_Owner_SeesOwnHistoryInAnyStatus` |
+| Employee dono | próprio `Rejected` (funcionario2, da I07) | 200 | 200, 3 entradas | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_Rejection_ExposesJustification` |
+| Employee outro | `Paid` de funcionario1 | 404 | 404 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_AnotherEmployee_ReturnsNotFound` |
+| Approver | `Submitted` de funcionario1 | 200 | 200 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_ApproverOnSubmitted_SeesHistory` |
+| Approver | `Paid` de funcionario1 | 404 | 404 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_ApproverOutsideSubmitted_ReturnsNotFound` |
+| Approver | Draft de funcionario2 | 404 | 404 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_ApproverOutsideSubmitted_ReturnsNotFound` |
+| Finance | `Paid` de funcionario1 | 200 | 200 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_FinanceOnApprovedOrPaid_SeesHistory` |
+| Finance | `Submitted` de funcionario1 | 404 | 404 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_FinanceOutsideApprovedOrPaid_ReturnsNotFound` |
+| Auditor | `Paid` (fluxo completo) | 200 | 200, 5 entradas em ordem | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_Auditor_SeesAnyHistory`, `GetHistoryAsync_FullPaymentFlow_ListsEveryActionInChronologicalOrder` |
+| Auditor | `Rejected` da I07 | 200 | 200 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_Auditor_SeesAnyHistory` |
+| Auditor | id inexistente | 404 | 404 | `ExpenseWorkflowServiceHistoryTests.GetHistoryAsync_MissingAndInvisible_AreIndistinguishable` |
+
+Histórico observado do reembolso do fluxo completo (lido pelo Auditor, em ordem cronológica, com horários UTC terminados em `Z`):
+
+| # | Ação | Ator | Anterior → posterior | Detalhe |
+|---:|---|---|---|---|
+| 1 | `Created` | funcionario1 | (nenhum) → `Draft` | |
+| 2 | `Updated` | funcionario1 | `Draft` → `Draft` | `description: Jantar com o time do projeto Atlas -> Jantar com o time do projeto Atlas, com gorjeta; amount: 89.90 -> 98.90` |
+| 3 | `Submitted` | funcionario1 | `Draft` → `Submitted` | |
+| 4 | `Approved` | aprovador | `Submitted` → `Approved` | |
+| 5 | `Paid` | financeiro | `Approved` → `Paid` | |
+
+O histórico do reembolso reprovado na I07 trouxe `Created`, `Submitted` e `Rejected` (aprovador, `Submitted` → `Rejected`), com a justificativa `Falta a nota fiscal da hospedagem; envie o comprovante.`.
 
 ## Observações
 
