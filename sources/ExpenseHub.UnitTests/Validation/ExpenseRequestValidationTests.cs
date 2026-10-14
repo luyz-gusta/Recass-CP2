@@ -1,7 +1,6 @@
 using System;
 using System.Globalization;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using ExpenseHub.Api.Dtos;
 using ExpenseHub.UnitTests.TestDoubles;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -16,7 +15,6 @@ namespace ExpenseHub.UnitTests.Validation;
 public sealed class ExpenseRequestValidationTests
 {
     private static readonly DateOnly _date = new(2026, 9, 30);
-    private static readonly JsonSerializerOptions _jsonOptions = CreateJsonOptions();
 
     /// <summary>Uma requisição completa e dentro dos limites é válida.</summary>
     [TestMethod]
@@ -165,8 +163,8 @@ public sealed class ExpenseRequestValidationTests
             { "description": "Almoço com cliente em São Paulo", "amount": 150.5, "expenseDate": "2026-09-30", "categoryId": 1, "{{field}}": "valor-do-cliente" }
             """;
 
-        Assert.ThrowsExactly<JsonException>(() => JsonSerializer.Deserialize<CreateExpenseRequest>(json, _jsonOptions));
-        Assert.ThrowsExactly<JsonException>(() => JsonSerializer.Deserialize<UpdateExpenseRequest>(json, _jsonOptions));
+        Assert.ThrowsExactly<JsonException>(() => JsonSerializer.Deserialize<CreateExpenseRequest>(json, ApiJson.Options));
+        Assert.ThrowsExactly<JsonException>(() => JsonSerializer.Deserialize<UpdateExpenseRequest>(json, ApiJson.Options));
     }
 
     /// <summary>Um corpo com somente os quatro campos do contrato é lido normalmente.</summary>
@@ -177,24 +175,13 @@ public sealed class ExpenseRequestValidationTests
             { "description": "Almoço com cliente em São Paulo", "amount": 150.5, "expenseDate": "2026-09-30", "categoryId": 2 }
             """;
 
-        CreateExpenseRequest? request = JsonSerializer.Deserialize<CreateExpenseRequest>(json, _jsonOptions);
+        CreateExpenseRequest? request = JsonSerializer.Deserialize<CreateExpenseRequest>(json, ApiJson.Options);
 
         Assert.IsNotNull(request);
         Assert.AreEqual(TestExpenses.ValidDescription, request.Description);
         Assert.AreEqual(150.5m, request.Amount);
         Assert.AreEqual(_date, request.ExpenseDate);
         Assert.AreEqual(2, request.CategoryId);
-    }
-
-    private static JsonSerializerOptions CreateJsonOptions()
-    {
-        // Mesmas opções do Program: enums como texto e campo desconhecido rejeitado.
-        JsonSerializerOptions options = new(JsonSerializerDefaults.Web)
-        {
-            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-        };
-        options.Converters.Add(new JsonStringEnumConverter());
-        return options;
     }
 
     private static decimal Parse(string value)
