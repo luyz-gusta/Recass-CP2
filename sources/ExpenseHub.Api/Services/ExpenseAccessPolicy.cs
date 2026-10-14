@@ -75,4 +75,61 @@ internal static class ExpenseAccessPolicy
 
         return AccessDecision.Allowed;
     }
+
+    /// <summary>
+    /// Decide se o ator pode aprovar ou reprovar um reembolso. A decisão avalia, nesta ordem fixa:
+    /// (1) sem a role Approver é Forbidden; (2) rascunho de outra pessoa é NotFound, porque o Approver nem enxerga rascunhos;
+    /// (3) reembolso do próprio ator é Forbidden, mesmo acumulando roles (autoaprovação proibida); (4) caso contrário, Allowed.
+    /// O estado do reembolso só entra para ocultar rascunhos alheios: a transição válida (somente Submitted) é verificada
+    /// depois pelo serviço, que responde 409 sem gravar histórico.
+    /// </summary>
+    /// <param name="actor">Usuário autenticado.</param>
+    /// <param name="ownerId">Identificador do proprietário do reembolso.</param>
+    /// <param name="status">Estado atual do reembolso.</param>
+    /// <returns>A decisão de acesso.</returns>
+    public static AccessDecision CanDecide(Actor actor, string ownerId, ExpenseStatus status)
+    {
+        return Evaluate(actor, AppRoles.Approver, ownerId, status);
+    }
+
+    /// <summary>
+    /// Decide se o ator pode registrar o pagamento de um reembolso. A decisão avalia, nesta ordem fixa:
+    /// (1) sem a role Finance é Forbidden; (2) rascunho de outra pessoa é NotFound, porque o Finance nem enxerga rascunhos;
+    /// (3) reembolso do próprio ator é Forbidden, mesmo acumulando roles (autopagamento proibido); (4) caso contrário, Allowed.
+    /// O estado do reembolso só entra para ocultar rascunhos alheios: a transição válida (somente Approved) é verificada
+    /// depois pelo serviço, que responde 409 sem gravar histórico nem pagamento.
+    /// </summary>
+    /// <param name="actor">Usuário autenticado.</param>
+    /// <param name="ownerId">Identificador do proprietário do reembolso.</param>
+    /// <param name="status">Estado atual do reembolso.</param>
+    /// <returns>A decisão de acesso.</returns>
+    public static AccessDecision CanPay(Actor actor, string ownerId, ExpenseStatus status)
+    {
+        return Evaluate(actor, AppRoles.Finance, ownerId, status);
+    }
+
+    private static AccessDecision Evaluate(Actor actor, string requiredRole, string ownerId, ExpenseStatus status)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(ownerId);
+
+        if (!actor.IsInRole(requiredRole))
+        {
+            return AccessDecision.Forbidden;
+        }
+
+        bool isOwner = string.Equals(actor.UserId, ownerId, StringComparison.Ordinal);
+
+        if (!isOwner && status == ExpenseStatus.Draft)
+        {
+            return AccessDecision.NotFound;
+        }
+
+        if (isOwner)
+        {
+            return AccessDecision.Forbidden;
+        }
+
+        return AccessDecision.Allowed;
+    }
 }

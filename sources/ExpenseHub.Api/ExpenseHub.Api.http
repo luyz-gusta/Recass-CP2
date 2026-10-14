@@ -793,3 +793,319 @@ Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
 
 ### Detalhe sem token → 401
 GET {{baseUrl}}/api/expenses/{{criarReembolso.response.body.$.id}}
+
+# ============================================================
+# I06 — Matriz de acesso (role + ownership + estado)
+# ============================================================
+# Casos negativos da matriz, com várias identidades. Os resultados observados estão em
+# docs/EVIDENCIAS-AUTORIZACAO.md. Execute depois das seções I04 e I05, com o banco zerado.
+# Regra geral: 401 sem token; 403 sem a role (ou Admin); 404 para o que o usuário não enxerga.
+
+### Dados da matriz: rascunho de funcionario1 → 201
+# @name matrizRascunhoFuncionario1
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Rascunho de funcionario1 para a matriz",
+  "amount": 100.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Dados da matriz: reembolso de funcionario1 já enviado → 201 (depois, enviar com a próxima requisição)
+# @name matrizEnviadoFuncionario1
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Reembolso enviado de funcionario1",
+  "amount": 80.00,
+  "expenseDate": "2026-09-16",
+  "categoryId": 2
+}
+
+### Dados da matriz: envia o reembolso acima → 200 (Submitted)
+POST {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}/submit
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+### Dados da matriz: rascunho do Approver + Employee → 201
+# @name matrizRascunhoAprovadorFuncionario
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Rascunho do aprovador com Employee",
+  "amount": 60.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Dados da matriz: rascunho do Finance + Employee → 201
+# @name matrizRascunhoFinanceiroFuncionario
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Rascunho do financeiro com Employee",
+  "amount": 70.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+# ------------------------------------------------------------
+# Isolamento entre Employees: trocar o id na URL não expõe dados
+# ------------------------------------------------------------
+
+### funcionario2 lê o rascunho de funcionario1 → 404
+GET {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### funcionario2 lê o Submitted de funcionario1 → 404 (Employee só vê os próprios)
+GET {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### funcionario2 edita o rascunho de funcionario1 → 404
+PUT {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de alterar o rascunho alheio",
+  "amount": 1.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### funcionario2 envia o rascunho de funcionario1 → 404
+POST {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}/submit
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+### Reembolso inexistente → 404 (mesma resposta de um reembolso fora do escopo)
+GET {{baseUrl}}/api/expenses/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{loginFuncionario2.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Roles acumuladas: a união vale, mas não dá acesso ao que é de outra pessoa
+# ------------------------------------------------------------
+
+### Approver + Employee edita o PRÓPRIO rascunho → 200
+PUT {{baseUrl}}/api/expenses/{{matrizRascunhoAprovadorFuncionario.response.body.$.id}}
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Rascunho do aprovador com Employee (editado)",
+  "amount": 65.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Approver + Employee edita o rascunho de funcionario1 → 404
+PUT {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de alterar o rascunho alheio",
+  "amount": 1.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Approver + Employee envia o rascunho de funcionario1 → 404
+POST {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}/submit
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+
+### Approver + Employee lê o rascunho de funcionario1 → 404 (só vê os próprios e os Submitted)
+GET {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+
+### Approver + Employee lê o Submitted de funcionario1 → 200
+GET {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+
+### Finance + Employee edita o PRÓPRIO rascunho → 200
+PUT {{baseUrl}}/api/expenses/{{matrizRascunhoFinanceiroFuncionario.response.body.$.id}}
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Rascunho do financeiro com Employee (editado)",
+  "amount": 75.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Finance + Employee edita o rascunho de funcionario1 → 404
+PUT {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de alterar o rascunho alheio",
+  "amount": 1.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Finance + Employee envia o rascunho de funcionario1 → 404
+POST {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}/submit
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+
+### Finance + Employee lê o Submitted de funcionario1 → 404 (Finance só vê Approved e Paid)
+GET {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+
+### Approver + Employee envia o PRÓPRIO rascunho → 200
+POST {{baseUrl}}/api/expenses/{{matrizRascunhoAprovadorFuncionario.response.body.$.id}}/submit
+Authorization: Bearer {{loginAprovadorFuncionario.response.body.$.accessToken}}
+
+### Finance + Employee envia o PRÓPRIO rascunho → 200
+POST {{baseUrl}}/api/expenses/{{matrizRascunhoFinanceiroFuncionario.response.body.$.id}}/submit
+Authorization: Bearer {{loginFinanceiroFuncionario.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Filtros de Approver, Finance e Auditor
+# ------------------------------------------------------------
+
+### Approver (sem Employee) lê o Submitted → 200
+GET {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Approver lê o rascunho de funcionario1 → 404 (não revela que existe)
+GET {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Approver lista → 200 somente com Submitted (nenhum Draft)
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+
+### Finance lê o Submitted → 404 (só vê Approved e Paid)
+GET {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Finance lista → 200 [] (ainda não há Approved nem Paid)
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Auditor lê o rascunho de funcionario1 → 200 (vê tudo)
+GET {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+### Auditor lista → 200 com todos os reembolsos
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Auditor não escreve
+# ------------------------------------------------------------
+
+### Auditor cria → 403
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de criar como Auditor",
+  "amount": 10.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Auditor edita → 403
+PUT {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de editar como Auditor",
+  "amount": 10.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Auditor envia → 403
+POST {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}/submit
+Authorization: Bearer {{loginAuditor.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Admin não recebe acesso funcional implícito
+# ------------------------------------------------------------
+
+### Admin lista reembolsos → 403
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Admin lê o detalhe → 403
+GET {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+### Admin cria → 403
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de criar como Admin",
+  "amount": 10.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Admin edita → 403
+PUT {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de editar como Admin",
+  "amount": 10.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Admin envia → 403
+POST {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}/submit
+Authorization: Bearer {{loginAdmin.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Roles erradas e identidade ausente
+# ------------------------------------------------------------
+
+### Approver (sem Employee) cria → 403
+POST {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginAprovador.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "description": "Tentativa de criar como Approver",
+  "amount": 10.00,
+  "expenseDate": "2026-09-15",
+  "categoryId": 1
+}
+
+### Finance (sem Employee) envia → 403
+POST {{baseUrl}}/api/expenses/{{matrizRascunhoFuncionario1.response.body.$.id}}/submit
+Authorization: Bearer {{loginFinanceiro.response.body.$.accessToken}}
+
+### Usuário sem nenhuma role lista → 403
+GET {{baseUrl}}/api/expenses
+Authorization: Bearer {{loginSemRole.response.body.$.accessToken}}
+
+### Sem token → 401 (vale para todas as rotas de reembolsos)
+GET {{baseUrl}}/api/expenses/{{matrizEnviadoFuncionario1.response.body.$.id}}
+
+### Identificador que não é GUID → 404
+GET {{baseUrl}}/api/expenses/abc
+Authorization: Bearer {{loginFuncionario1.response.body.$.accessToken}}
+
+# ------------------------------------------------------------
+# Rotas das issues I07 e I08 (completar quando existirem)
+# ------------------------------------------------------------
+# approve, reject, pay e history são validadas na I07 e na I08. As decisões contextuais já estão prontas em
+# ExpenseAccessPolicy.CanDecide e CanPay (403 para o próprio reembolso, 404 para rascunho alheio).
