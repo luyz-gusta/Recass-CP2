@@ -8,11 +8,13 @@ Enunciado, issues e rubrica: [Racass/checkpoint-csharpracass-expensehub](https:/
 
 ## Equipe e divisão
 
-| Integrante | Issues |
-|---|---|
-| Luiz Gustavo da Silva ([@luyz-gusta](https://github.com/luyz-gusta)) | I01 Fundação e EF Core · I02 Identity, Admin e autenticação · I03 Cadastro e roles · I10 Qualidade (auditoria final) |
-| Pessoa 2 | I04 Criar e editar rascunho · I05 Enviar, listar e consultar · I06 Ownership e matriz de acesso |
-| Pessoa 3 | I07 Aprovar e reprovar · I08 Pagamento e histórico · I09 Testes unitários |
+| Integrante | Issues | Pull requests |
+|---|---|---|
+| Luiz Gustavo da Silva ([@luyz-gusta](https://github.com/luyz-gusta)) | I01 Fundação e EF Core · I02 Identity, Admin e autenticação · I03 Cadastro e roles · I10 Qualidade de código | [#1](https://github.com/luyz-gusta/Recass-CP2/pull/1), [#2](https://github.com/luyz-gusta/Recass-CP2/pull/2), [#3](https://github.com/luyz-gusta/Recass-CP2/pull/3) e o PR da I10 |
+| Rafael Duarte ([@RafaelDuarteF](https://github.com/RafaelDuarteF)) | I04 Criar e editar rascunho · I05 Enviar, listar e consultar · I06 Ownership e matriz de acesso | [#4](https://github.com/luyz-gusta/Recass-CP2/pull/4), [#5](https://github.com/luyz-gusta/Recass-CP2/pull/5), [#6](https://github.com/luyz-gusta/Recass-CP2/pull/6) |
+| Guilherme Oliveira Santana de Almeida ([@aGuiOliveira](https://github.com/aGuiOliveira)) | I07 Aprovar e reprovar · I08 Pagamento e histórico · I09 Testes unitários | [#7](https://github.com/luyz-gusta/Recass-CP2/pull/7), [#8](https://github.com/luyz-gusta/Recass-CP2/pull/8), [#9](https://github.com/luyz-gusta/Recass-CP2/pull/9) |
+
+Cada issue foi implementada numa branch própria e entrou na `main` por pull request com merge commit, preservando a autoria de cada commit. Cada PR cita a issue do repositório original (`Racass/checkpoint-csharpracass-expensehub#N`), descreve as decisões e as evidências e passou pelo workflow `code-quality`.
 
 ## Pré-requisitos
 
@@ -85,6 +87,39 @@ sources/
 ```
 
 Toda resposta de erro segue `ProblemDetails`. Campos desconhecidos no JSON (por exemplo `ownerId`, `status` ou `roles`) são rejeitados com `400`, o que impede mass assignment.
+
+## Mapa da API
+
+| Método e rota | Roles | Sucesso | Erros específicos |
+|---|---|---|---|
+| `GET /health` | público | `200` | — |
+| `POST /register` | público | `201` (usuário sem roles) | `400` dados inválidos ou campo extra; `409` e-mail já cadastrado |
+| `POST /login` | público | `200` (token bearer) | `400` corpo inválido; `401` credencial inválida |
+| `GET /api/me` | autenticado | `200` (id, e-mail e roles do token) | — |
+| `GET /api/admin/users` | Admin | `200` | — |
+| `PUT /api/admin/users/{id}/roles` | Admin | `200` | `400` role desconhecida; `404` usuário inexistente; `409` Admin removendo a própria role Admin |
+| `POST /api/expenses` | Employee | `201` (`Draft`) | `400` dados inválidos |
+| `PUT /api/expenses/{id}` | Employee, só o dono | `200` | `400`; `404` inexistente ou de outra pessoa; `409` fora de `Draft` |
+| `GET /api/expenses` | Employee, Approver, Finance, Auditor | `200` (filtrado pelo perfil) | — |
+| `GET /api/expenses/{id}` | Employee, Approver, Finance, Auditor | `200` | `404` inexistente ou fora do escopo |
+| `POST /api/expenses/{id}/submit` | Employee, só o dono | `200` (`Submitted`) | `404`; `409` fora de `Draft` ou repetido |
+| `POST /api/expenses/{id}/approve` | Approver, exceto o dono | `200` (`Approved`) | `403` próprio reembolso; `404`; `409` fora de `Submitted` |
+| `POST /api/expenses/{id}/reject` | Approver, exceto o dono | `200` (`Rejected`) | `400` justificativa; `403` próprio reembolso; `404`; `409` fora de `Submitted` |
+| `POST /api/expenses/{id}/pay` | Finance, exceto o dono | `200` (`Paid`) | `403` próprio reembolso; `404`; `409` fora de `Approved` |
+| `GET /api/expenses/{id}/history` | Employee, Approver, Finance, Auditor | `200` (ordem cronológica) | `404` inexistente ou fora do escopo |
+
+Em toda rota protegida: sem token ou com token inválido → `401`; autenticado sem a role da rota → `403`. Roles acumuladas somam permissões, mas ninguém aprova ou paga o próprio reembolso.
+
+**Ordem de decisão em todos os serviços:**
+
+1. role (`403`);
+2. entrada (`400`);
+3. escopo (`404`, sem revelar se o recurso existe);
+4. ownership (`403`, autoaprovação e autopagamento);
+5. estado (`409`, transição inválida ou repetida, sem histórico);
+6. persistência: estado, histórico e pagamento num único `SaveChanges`.
+
+O detalhamento de cada regra está nas seções abaixo e em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 ## Autenticação (I02)
 
