@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using ExpenseHub.Api.Contracts;
@@ -13,8 +14,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace ExpenseHub.Api.Controllers;
 
 /// <summary>
-/// Fluxo de aprovação dos reembolsos: aprovar e reprovar. A role é verificada aqui; escopo, ownership e estado
-/// são decididos na camada de serviço. Aprovador e horário nunca vêm do cliente.
+/// Fluxo dos reembolsos depois do envio (aprovar, reprovar e pagar) e consulta do histórico. A role é verificada aqui;
+/// escopo, ownership e estado são decididos na camada de serviço. Ator e horário nunca vêm do cliente.
 /// </summary>
 [ApiController]
 [Route("api/expenses")]
@@ -77,5 +78,47 @@ public sealed class ExpenseWorkflowController : ControllerBase
     {
         ServiceResult<ExpenseResponse> result = await _workflowService.RejectAsync(User.ToActor(), id, request, cancellationToken);
         return this.ToActionResult(result, expense => Ok(expense));
+    }
+
+    /// <summary>
+    /// Registra o pagamento de um reembolso aprovado de outra pessoa (Approved para Paid). Pagar o próprio reembolso
+    /// responde 403, mesmo acumulando roles; um segundo pagamento responde 409.
+    /// </summary>
+    /// <param name="id">Identificador do reembolso.</param>
+    /// <param name="cancellationToken">Token de cancelamento.</param>
+    /// <returns>
+    /// 200 com o reembolso pago (<c>paidById</c> e <c>paidAtUtc</c> preenchidos pelo servidor); 403 sem a role Finance ou no
+    /// próprio reembolso; 404 para reembolso inexistente ou rascunho de outra pessoa; 409 fora de Approved.
+    /// </returns>
+    [HttpPost("{id:guid}/pay")]
+    [Authorize(Roles = AppRoles.Finance)]
+    [ProducesResponseType<ExpenseResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> PayAsync(Guid id, CancellationToken cancellationToken)
+    {
+        ServiceResult<ExpenseResponse> result = await _workflowService.PayAsync(User.ToActor(), id, cancellationToken);
+        return this.ToActionResult(result, expense => Ok(expense));
+    }
+
+    /// <summary>
+    /// Consulta o histórico de um reembolso em ordem cronológica, com a mesma visibilidade do detalhe.
+    /// Reembolso inexistente ou fora do escopo de leitura responde 404, sem distinção.
+    /// </summary>
+    /// <param name="id">Identificador do reembolso.</param>
+    /// <param name="cancellationToken">Token de cancelamento.</param>
+    /// <returns>200 com as entradas do histórico; 403 sem nenhuma role de leitura; 404 para reembolso inexistente ou invisível.</returns>
+    [HttpGet("{id:guid}/history")]
+    [Authorize(Roles = AppRoles.ExpenseReaders)]
+    [ProducesResponseType<IReadOnlyList<ExpenseHistoryResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetHistoryAsync(Guid id, CancellationToken cancellationToken)
+    {
+        ServiceResult<IReadOnlyList<ExpenseHistoryResponse>> result = await _workflowService.GetHistoryAsync(User.ToActor(), id, cancellationToken);
+        return this.ToActionResult(result, entries => Ok(entries));
     }
 }
