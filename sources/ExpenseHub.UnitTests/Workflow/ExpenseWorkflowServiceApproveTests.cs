@@ -76,6 +76,19 @@ public sealed class ExpenseWorkflowServiceApproveTests
         Assert.AreEqual(TestActors.ApproverEmployee.UserId, expense.DecidedById);
     }
 
+    /// <summary>A role Admin não tira nem dá permissão de decidir: Admin + Approver aprova o reembolso enviado de outra pessoa.</summary>
+    [TestMethod]
+    public async Task ApproveAsync_AdminWithApproverOnOthersSubmitted_Approves()
+    {
+        Expense expense = Seed(TestActors.Employee1, ExpenseStatus.Submitted);
+        Actor actor = TestActors.Create("admin-approver-1", AppRoles.Admin, AppRoles.Approver);
+
+        ServiceResult<ExpenseResponse> result = await _service.ApproveAsync(actor, expense.Id, CancellationToken.None);
+
+        Assert.IsTrue(result.Succeeded);
+        Assert.AreEqual(ExpenseStatus.Approved, expense.Status);
+    }
+
     /// <summary>Autoaprovação é proibida: Approver + Employee no próprio reembolso recebe 403, sem histórico e sem gravar.</summary>
     [TestMethod]
     public async Task ApproveAsync_ApproverEmployeeOnOwnSubmitted_ReturnsForbiddenWithoutHistory()
