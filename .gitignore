@@ -47,6 +47,12 @@ Desktop.ini
 
 # Segredos — NUNCA commitar
 *.env
+.env
 appsettings.Development.json
 appsettings.Local.json
 secrets.json
+
+# Banco SQLite local (criado ao executar a API)
+*.db
+*.db-shm
+*.db-wal
