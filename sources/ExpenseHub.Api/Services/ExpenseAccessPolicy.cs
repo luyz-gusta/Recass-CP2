@@ -1,4 +1,5 @@
 using System;
+using System.Linq.Expressions;
 using ExpenseHub.Api.Domain;
 
 namespace ExpenseHub.Api.Services;
@@ -9,6 +10,46 @@ namespace ExpenseHub.Api.Services;
 /// </summary>
 internal static class ExpenseAccessPolicy
 {
+    /// <summary>
+    /// Indica se o ator tem alguma role de leitura de reembolsos (Employee, Approver, Finance ou Auditor).
+    /// Admin, sozinho, e usuário sem role não leem reembolsos.
+    /// </summary>
+    /// <param name="actor">Usuário autenticado.</param>
+    /// <returns><see langword="true"/> quando o ator possui ao menos uma role de leitura.</returns>
+    public static bool HasReadRole(Actor actor)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        return actor.IsInRole(AppRoles.Employee)
+            || actor.IsInRole(AppRoles.Approver)
+            || actor.IsInRole(AppRoles.Finance)
+            || actor.IsInRole(AppRoles.Auditor);
+    }
+
+    /// <summary>
+    /// Filtro de visibilidade de leitura (lista, detalhe e histórico), pensado para ser aplicado na consulta, antes de materializar os dados.
+    /// Com roles acumuladas vale a união das permissões: Auditor vê tudo; Employee vê os próprios; Approver vê os enviados
+    /// (<see cref="ExpenseStatus.Submitted"/>); Finance vê os aprovados e os pagos. Sem role de leitura, nada é visível.
+    /// </summary>
+    /// <param name="actor">Usuário autenticado.</param>
+    /// <returns>Expressão traduzível para SQL.</returns>
+    public static Expression<Func<Expense, bool>> ReadScope(Actor actor)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        // Valores simples calculados fora da expressão: o EF os trata como parâmetros e a consulta continua traduzível para SQL.
+        bool isAuditor = actor.IsInRole(AppRoles.Auditor);
+        bool isEmployee = actor.IsInRole(AppRoles.Employee);
+        bool isApprover = actor.IsInRole(AppRoles.Approver);
+        bool isFinance = actor.IsInRole(AppRoles.Finance);
+        string userId = actor.UserId;
+
+        return expense => isAuditor
+            || (isEmployee && expense.OwnerId == userId)
+            || (isApprover && expense.Status == ExpenseStatus.Submitted)
+            || (isFinance && (expense.Status == ExpenseStatus.Approved || expense.Status == ExpenseStatus.Paid));
+    }
+
     /// <summary>
     /// Decide se o ator pode editar ou enviar um rascunho do proprietário informado.
     /// Sem a role Employee é Forbidden; reembolso de outra pessoa é NotFound, para não revelar que existe.
