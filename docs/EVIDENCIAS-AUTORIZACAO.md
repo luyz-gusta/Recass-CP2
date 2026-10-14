@@ -5,7 +5,8 @@ Este documento comprova a [matriz de autorização](MATRIZ-AUTORIZACAO.md): para
 ## Como foi gerado
 
 - API local em `http://localhost:5245`, com o banco SQLite **zerado** (sem `expensehub.db`) e os sete usuários de demonstração criados por `POST /register` e `PUT /api/admin/users/{id}/roles`, como na seção I03 do [`.http`](../sources/ExpenseHub.Api/ExpenseHub.Api.http). Cada perfil fez login depois de receber a role (as roles vão dentro do token).
-- 63 requisições (cada linha das tabelas abaixo), todas com o status esperado. As mesmas requisições estão na seção "I06 — Matriz de acesso" do `.http`, para o professor repetir.
+- 63 requisições (cada linha das tabelas de criar, editar, enviar, listar e detalhar abaixo), todas com o status esperado. As mesmas requisições estão na seção "I06 — Matriz de acesso" do `.http`, para o professor repetir.
+- Aprovar e reprovar (I07): 39 requisições da seção "I07 — Aprovar e reprovar" do `.http`, executadas em seguida no mesmo banco, todas com o status esperado.
 - Os testes unitários citados ficam em `sources/ExpenseHub.UnitTests`. A 1ª camada (atributo `[Authorize(Roles = ...)]` no controller) é validada por `ExpensesControllerAuthorizationTests`; as demais (role, ownership e estado no **serviço**) por `ExpenseAccessPolicyTests`, `ExpenseReadScopeTests` e pelos testes de serviço.
 
 ## Perfis
@@ -132,22 +133,47 @@ Reembolso inexistente e reembolso fora do escopo respondem **exatamente igual** 
 | Auditor | `Submitted` de funcionario1 | 200 | 200 | `ExpenseReadScopeTests.ReadScope_Auditor_SeesEverything` |
 | Admin | `Submitted` de funcionario1 | 403 | 403 | `ExpenseServiceQueryTests.GetAsync_ActorWithoutReadRole_ReturnsForbidden` |
 
-## Rotas da I07 e da I08 (a validar)
+## `POST /api/expenses/{id}/approve` e `POST /api/expenses/{id}/reject` (I07)
 
-A política contextual já está pronta e testada (`ExpenseAccessPolicy.CanDecide` e `CanPay`, com todos os estados, donos e roles em `ExpenseAccessPolicyTests`). Estas rotas ficam para a Pessoa 3 completar com o status **observado** e o teste do serviço, depois da I07 e da I08. O esperado abaixo segue a [matriz](MATRIZ-AUTORIZACAO.md) e a ordem de decisão acima.
-
-### `POST /api/expenses/{id}/approve` e `POST /api/expenses/{id}/reject`
+Gerado pela seção "I07 — Aprovar e reprovar" do `.http`: 39 requisições executadas logo depois das seções I02 a I06, no mesmo banco zerado, todas com o status esperado. Os testes de serviço ficam em `Workflow/` (`ExpenseWorkflowServiceApproveTests` e `ExpenseWorkflowServiceRejectTests`), os do domínio em `ExpenseDecisionTests` e a 1ª camada (atributo da rota) em `ExpenseWorkflowControllerAuthorizationTests`.
 
 | Perfil | Cenário | Esperado | Observado | Teste unitário |
 |---|---|:---:|:---:|---|
-| Anônimo | qualquer | 401 | a validar na I07 | a validar na I07 |
-| Sem role, Employee, Finance, Auditor, Admin | qualquer | 403 | a validar na I07 | `ExpenseAccessPolicyTests.CanDecide_RoleWithoutApprover_ReturnsForbiddenForEveryOwnerAndStatus` |
-| Approver | `Submitted` de outra pessoa | 200 | a validar na I07 | `ExpenseAccessPolicyTests.CanDecide_ApproverOnOthersNonDraft_ReturnsAllowedForEveryStatus` |
-| Approver | Draft de outra pessoa | 404 | a validar na I07 | `ExpenseAccessPolicyTests.CanDecide_ApproverOnOthersDraft_ReturnsNotFound` |
-| Approver | já decidido (`Approved`, `Rejected`) ou `Paid` | 409 | a validar na I07 | a validar na I07 |
-| Approver dono | o **próprio** reembolso, em qualquer estado | 403 | a validar na I07 | `ExpenseAccessPolicyTests.CanDecide_ApproverEmployeeOnOwnExpense_ReturnsForbiddenForEveryStatus` |
-| Approver dono | `Submitted` de outra pessoa | 200 | a validar na I07 | `ExpenseAccessPolicyTests.CanDecide_ApproverEmployeeOnOthersSubmitted_ReturnsAllowed` |
-| Approver (`reject`) | justificativa ausente ou fora de 10 a 500 caracteres | 400 | a validar na I07 | a validar na I07 |
+| Anônimo | aprovar e reprovar sem token | 401 | 401 e 401 | `ExpenseWorkflowControllerAuthorizationTests.ExpenseWorkflowController_EveryAction_DeclaresRolesAndNoneIsAnonymous` (o `401` é da `FallbackPolicy`) |
+| Sem role | reprovar | 403 | 403 | `ExpenseWorkflowServiceRejectTests.RejectAsync_ActorWithNoRole_ReturnsForbidden` |
+| Employee | aprovar | 403 | 403 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ActorWithoutApproverRole_ReturnsForbidden`, `ExpenseWorkflowControllerAuthorizationTests.DecisionActions_RequireApproverRole` |
+| Finance | aprovar | 403 | 403 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ActorWithoutApproverRole_ReturnsForbidden` |
+| Finance dono | reprovar (Finance + Employee, sem Approver) | 403 | 403 | `ExpenseWorkflowServiceRejectTests.RejectAsync_ActorWithoutApproverRole_ReturnsForbidden` |
+| Auditor | aprovar | 403 | 403 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ActorWithoutApproverRole_ReturnsForbidden` |
+| Admin | aprovar | 403 | 403 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ActorWithoutApproverRole_ReturnsForbidden`, `ExpenseAccessPolicyTests.CanDecide_RoleWithoutApprover_ReturnsForbiddenForEveryOwnerAndStatus` |
+| Approver | aprovar o `Submitted` de funcionario1 | 200 | 200 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_OthersSubmitted_ApprovesWithDeciderAndServerTime`, `ApproveAsync_OthersSubmitted_RecordsApprovedHistoryInSingleSave` |
+| Approver | reprovar o `Submitted` de funcionario2 com justificativa | 200 | 200 | `ExpenseWorkflowServiceRejectTests.RejectAsync_OthersSubmitted_RejectsWithDeciderAndServerTime`, `RejectAsync_OthersSubmitted_PersistsJustificationInExpenseAndHistoryInSingleSave` |
+| Approver | aprovar de novo o que já aprovou | 409 | 409 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_SecondApproval_ReturnsConflictWithSingleApprovedHistory` |
+| Approver | reprovar um `Approved` | 409 | 409 | `ExpenseWorkflowServiceRejectTests.RejectAsync_AfterApproval_ReturnsConflictAndKeepsApproval` |
+| Approver | reprovar de novo o que já reprovou | 409 | 409 | `ExpenseWorkflowServiceRejectTests.RejectAsync_SecondRejection_ReturnsConflictWithSingleRejectedHistory` |
+| Approver | aprovar um `Rejected` | 409 | 409 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_AfterRejection_ReturnsConflictAndKeepsRejection` |
+| Approver | aprovar ou reprovar um `Paid` | 409 | a validar na I08 (o pagamento chega na I08) | `ApproveAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus`, `RejectAsync_ExpenseAlreadyDecidedOrPaid_ReturnsConflictAndKeepsStatus` |
+| Approver | aprovar e reprovar o Draft de funcionario2 | 404 | 404 e 404 | `ApproveAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft`, `RejectAsync_OthersDraft_ReturnsNotFoundAndKeepsDraft`, `ExpenseAccessPolicyTests.CanDecide_ApproverOnOthersDraft_ReturnsNotFound` |
+| Approver | id inexistente | 404 | 404 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_UnknownId_ReturnsNotFound` |
+| Approver | id que não é GUID | 404 | 404 | `ExpenseWorkflowControllerAuthorizationTests.DecisionActions_ArePostRoutesUnderExpenses` (restrição `{id:guid}`) |
+| Approver dono | aprovar e reprovar o **próprio** `Submitted` | 403 | 403 e 403 | `ApproveAsync_ApproverEmployeeOnOwnSubmitted_ReturnsForbiddenWithoutHistory`, `RejectAsync_ApproverEmployeeOnOwnSubmitted_ReturnsForbiddenWithoutHistory`, `ExpenseAccessPolicyTests.CanDecide_ApproverEmployeeOnOwnExpense_ReturnsForbiddenForEveryStatus` |
+| Approver dono | aprovar o `Submitted` de funcionario2 | 200 | 200 | `ExpenseWorkflowServiceApproveTests.ApproveAsync_ApproverEmployeeOnOthersSubmitted_Approves`, `ExpenseAccessPolicyTests.CanDecide_ApproverEmployeeOnOthersSubmitted_ReturnsAllowed` |
+| Approver | aprovar o `Submitted` do Approver dono (só o dono fica impedido) | 200 | 200 | `ExpenseAccessPolicyTests.CanDecide_ApproverOnOthersNonDraft_ReturnsAllowedForEveryStatus` |
+| Approver (`reject`) | corpo vazio, justificativa nula ou só com espaços | 400 | 400, 400 e 400 | `RejectExpenseRequestValidationTests.Deserialize_EmptyBody_FailsOnJustification`, `Validate_JustificationBlank_FailsOnJustification`, `ExpenseWorkflowServiceRejectTests.RejectAsync_BlankJustification_ReturnsValidationWithoutSaving` |
+| Approver (`reject`) | justificativa com 9 ou com 501 caracteres | 400 | 400 e 400 | `RejectExpenseRequestValidationTests.Validate_JustificationOutsideLimits_FailsOnJustification`, `RejectAsync_JustificationOutOfLength_ReturnsValidationWithoutSaving`, `ExpenseDecisionTests.Reject_JustificationOutOfLength_ThrowsAndKeepsSubmitted` |
+| Approver (`reject`) | 9 caracteres cercados de espaços (o tamanho é medido sem eles) | 400 | 400 | `ExpenseWorkflowServiceRejectTests.RejectAsync_JustificationShortAfterTrim_ReturnsValidationWithoutSaving`, `ExpenseDecisionTests.Reject_JustificationTooShortAfterTrim_ThrowsAndKeepsSubmitted` |
+| Approver (`reject`) | `decidedById` ou `status` no corpo | 400 | 400 e 400 | `RejectExpenseRequestValidationTests.Deserialize_ServerControlledField_IsRejected` |
+
+Detalhes observados nas respostas de sucesso:
+
+- **Ator e horário do servidor:** a aprovação devolveu `decidedById` igual ao id do `aprovador` e `decidedAtUtc` com o horário do servidor; nada disso veio do corpo.
+- **Justificativa sem espaços nas pontas:** a reprovação enviada com `"   Falta a nota fiscal da hospedagem; envie o comprovante.   "` gravou `rejectionReason` sem os espaços, e o dono vê o reembolso em `Rejected` com o motivo (`200`).
+- **Visibilidade depois da decisão:** o Finance passou a ler o reembolso aprovado (`200`) e o Approver deixou de lê-lo (`404`), porque o Approver só vê `Submitted`.
+- **Ordem das verificações:** sem a role, até uma justificativa inválida responde `403` (`RejectAsync_ActorWithoutApproverRoleAndInvalidJustification_ReturnsForbidden`); com a role, a justificativa inválida responde `400` antes de procurar o reembolso (`RejectAsync_InvalidJustificationOnUnknownId_ReturnsValidation`).
+
+## Rotas da I08 (a validar)
+
+A política contextual já está pronta e testada (`ExpenseAccessPolicy.CanPay` e `ReadScope`, com todos os estados, donos e roles em `ExpenseAccessPolicyTests` e `ExpenseReadScopeTests`). Estas rotas ficam para a Pessoa 3 completar com o status **observado** e o teste do serviço, depois da I08. O esperado abaixo segue a [matriz](MATRIZ-AUTORIZACAO.md) e a ordem de decisão acima.
 
 ### `POST /api/expenses/{id}/pay`
 
