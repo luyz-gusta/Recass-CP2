@@ -125,10 +125,13 @@ public sealed class ExpenseDecisionTests
         Assert.AreEqual(ValidJustification, expense.RejectionReason);
     }
 
-    /// <summary>Os limites de 10 e de 500 caracteres são aceitos.</summary>
+    /// <summary>
+    /// Os limites de 10 e de 500 caracteres são aceitos. Os valores são os do contrato, escritos aqui, e não as constantes
+    /// do domínio: se alguém mudar a constante, o teste falha.
+    /// </summary>
     [TestMethod]
-    [DataRow(Expense.RejectionReasonMinLength)]
-    [DataRow(Expense.RejectionReasonMaxLength)]
+    [DataRow(10)]
+    [DataRow(500)]
     public void Reject_JustificationAtLengthLimit_IsAccepted(int length)
     {
         Expense expense = SubmittedExpense();
@@ -140,11 +143,11 @@ public sealed class ExpenseDecisionTests
         Assert.AreEqual(justification, expense.RejectionReason);
     }
 
-    /// <summary>Justificativa vazia, com 9 ou com 501 caracteres é recusada e o reembolso continua Submitted.</summary>
+    /// <summary>Justificativa vazia, com 9 ou com 501 caracteres é recusada e o reembolso continua Submitted (limites do contrato, literais).</summary>
     [TestMethod]
     [DataRow(0)]
-    [DataRow(Expense.RejectionReasonMinLength - 1)]
-    [DataRow(Expense.RejectionReasonMaxLength + 1)]
+    [DataRow(9)]
+    [DataRow(501)]
     public void Reject_JustificationOutOfLength_ThrowsAndKeepsSubmitted(int length)
     {
         Expense expense = SubmittedExpense();
