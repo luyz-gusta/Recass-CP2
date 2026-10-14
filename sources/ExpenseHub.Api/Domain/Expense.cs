@@ -216,6 +216,33 @@ internal sealed class Expense
         Decide(ExpenseStatus.Rejected, approverId, nowUtc);
     }
 
+    /// <summary>
+    /// Registra o pagamento de um reembolso aprovado (<see cref="ExpenseStatus.Approved"/> para <see cref="ExpenseStatus.Paid"/>).
+    /// Cria o <see cref="PaymentRecord"/> com o valor do reembolso, quem pagou e quando, e o associa a <see cref="Payment"/>.
+    /// <see cref="ExpenseStatus.Paid"/> é um estado final: um reembolso nunca é pago duas vezes.
+    /// </summary>
+    /// <param name="financeUserId">Identificador do usuário do financeiro autenticado, informado pelo serviço.</param>
+    /// <param name="nowUtc">Instante atual em UTC, obtido do <see cref="TimeProvider"/>.</param>
+    /// <returns>O registro de pagamento criado, ainda não persistido.</returns>
+    /// <exception cref="InvalidOperationException">O reembolso não está em <see cref="ExpenseStatus.Approved"/>.</exception>
+    public PaymentRecord MarkAsPaid(string financeUserId, DateTime nowUtc)
+    {
+        if (Status != ExpenseStatus.Approved)
+        {
+            throw new InvalidOperationException($"Somente um reembolso aprovado pode ser pago; o estado atual é {Status}.");
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(financeUserId);
+
+        PaymentRecord payment = PaymentRecord.Create(Id, Amount, financeUserId, nowUtc);
+        Payment = payment;
+        Status = ExpenseStatus.Paid;
+        UpdatedAtUtc = nowUtc;
+        ConcurrencyStamp = Guid.NewGuid();
+
+        return payment;
+    }
+
     private void Decide(ExpenseStatus outcome, string approverId, DateTime nowUtc)
     {
         Status = outcome;
