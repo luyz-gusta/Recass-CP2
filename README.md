@@ -214,7 +214,39 @@ Quem acumula roles recebe a **união** das visibilidades (por exemplo, `Approver
 - **Envio:** muda `Draft` → `Submitted`, preenche `submittedAtUtc` e grava o histórico `Submitted` (`Draft` → `Submitted`) no mesmo `SaveChanges`. Não existe reenvio: enviar de novo responde `409` e não cria histórico duplicado. Depois de enviado, o reembolso não pode mais ser editado (`409`).
 - **Somente leitura para Auditor e Admin:** nenhum dos dois cria, edita ou envia reembolsos (`403`).
 
-A matriz de acesso completa (I06) será documentada na issue correspondente.
+### Ownership e matriz de acesso (I06)
+
+A autorização tem **duas camadas**, e as duas valem:
+
+1. **Role no controller:** `[Authorize(Roles = ...)]` em cada rota. Sem token → `401`; sem a role → `403`.
+2. **Decisão contextual no serviço:** role, ownership e estado combinados em `ExpenseAccessPolicy`. A regra vale mesmo que o serviço seja chamado sem o controller. Um atributo de role isolado nunca basta, e um filtro de tela não é autorização.
+
+| Rota | Employee | Approver | Finance | Auditor | Admin | Regra contextual (serviço) |
+|---|:---:|:---:|:---:|:---:|:---:|---|
+| `POST /api/expenses` | sim | não | não | não | não | dono = usuário do token |
+| `PUT /api/expenses/{id}` | sim* | não | não | não | não | só o dono, só em `Draft` |
+| `POST /api/expenses/{id}/submit` | sim* | não | não | não | não | só o dono, só em `Draft` |
+| `GET /api/expenses` | sim* | sim* | sim* | sim | não | `ReadScope` aplicado na consulta |
+| `GET /api/expenses/{id}` | sim* | sim* | sim* | sim | não | fora do escopo → `404` |
+| `POST /api/expenses/{id}/approve` e `/reject` | não | sim* | não | não | não | não pode ser o próprio reembolso; só `Submitted` |
+| `POST /api/expenses/{id}/pay` | não | não | sim* | não | não | não pode ser o próprio reembolso; só `Approved` |
+| `GET /api/expenses/{id}/history` | sim* | sim* | sim* | sim | não | mesma visibilidade do reembolso |
+
+`*` a operação também depende de ownership, estado ou visibilidade. Quem acumula roles recebe a **união** das permissões, mas isso nunca elimina as proibições: `Approver` + `Employee` não aprova o próprio reembolso, `Finance` + `Employee` não paga o próprio, e a role `Employee` sozinha não abre o reembolso de outra pessoa.
+
+**`ExpenseAccessPolicy`** (em `Services/`) concentra as decisões e recebe dados primitivos, então qualquer combinação de role, dono e estado é testável sem banco:
+
+| Método | Decisão |
+|---|---|
+| `HasReadRole(actor)` | tem Employee, Approver, Finance ou Auditor? (Admin sozinho e sem role: não) |
+| `ReadScope(actor)` | expressão de visibilidade, aplicada **na consulta SQL** (Auditor: tudo; Employee: próprios; Approver: `Submitted`; Finance: `Approved` e `Paid`) |
+| `CanManageDraft(actor, ownerId)` | sem Employee → `Forbidden`; não é o dono → `NotFound`; senão `Allowed` |
+| `CanDecide(actor, ownerId, status)` | sem Approver → `Forbidden`; rascunho de outra pessoa → `NotFound`; o próprio reembolso → `Forbidden`; senão `Allowed` |
+| `CanPay(actor, ownerId, status)` | sem Finance → `Forbidden`; rascunho de outra pessoa → `NotFound`; o próprio reembolso → `Forbidden`; senão `Allowed` |
+
+Códigos de resposta: `401` sem identidade; `403` sem a role, ou ao aprovar/pagar o próprio reembolso; `404` para o que o usuário não enxerga (inexistente e fora do escopo são indistinguíveis); `409` para transição inválida ou repetida.
+
+As evidências, com o status esperado, o observado e o teste unitário de cada combinação de rota e perfil, estão em [docs/EVIDENCIAS-AUTORIZACAO.md](docs/EVIDENCIAS-AUTORIZACAO.md). As requisições para repetir os casos estão na seção "I06 — Matriz de acesso" do `.http`.
 
 ## Aprovação, pagamento e histórico (I07–I08)
 
