@@ -8,11 +8,11 @@ Enunciado, issues e rubrica: [Racass/checkpoint-csharpracass-expensehub](https:/
 
 ## Equipe e divisão
 
-| Integrante | Issues | Pull requests |
-|---|---|---|
-| Luiz Gustavo da Silva ([@luyz-gusta](https://github.com/luyz-gusta)) | I01 Fundação e EF Core · I02 Identity, Admin e autenticação · I03 Cadastro e roles · I10 Qualidade de código | [#1](https://github.com/luyz-gusta/Recass-CP2/pull/1), [#2](https://github.com/luyz-gusta/Recass-CP2/pull/2), [#3](https://github.com/luyz-gusta/Recass-CP2/pull/3) e o PR da I10 |
-| Rafael Duarte ([@RafaelDuarteF](https://github.com/RafaelDuarteF)) | I04 Criar e editar rascunho · I05 Enviar, listar e consultar · I06 Ownership e matriz de acesso | [#4](https://github.com/luyz-gusta/Recass-CP2/pull/4), [#5](https://github.com/luyz-gusta/Recass-CP2/pull/5), [#6](https://github.com/luyz-gusta/Recass-CP2/pull/6) |
-| Guilherme Oliveira Santana de Almeida ([@aGuiOliveira](https://github.com/aGuiOliveira)) | I07 Aprovar e reprovar · I08 Pagamento e histórico · I09 Testes unitários | [#7](https://github.com/luyz-gusta/Recass-CP2/pull/7), [#8](https://github.com/luyz-gusta/Recass-CP2/pull/8), [#9](https://github.com/luyz-gusta/Recass-CP2/pull/9) |
+| Integrante | RM | Issues | Pull requests |
+|---|---|---|---|
+| Luiz Gustavo da Silva ([@luyz-gusta](https://github.com/luyz-gusta)) | 558358 | I01 Fundação e EF Core · I02 Identity, Admin e autenticação · I03 Cadastro e roles · I10 Qualidade de código | [#1](https://github.com/luyz-gusta/Recass-CP2/pull/1), [#2](https://github.com/luyz-gusta/Recass-CP2/pull/2), [#3](https://github.com/luyz-gusta/Recass-CP2/pull/3), [#10](https://github.com/luyz-gusta/Recass-CP2/pull/10) |
+| Rafael Duarte ([@RafaelDuarteF](https://github.com/RafaelDuarteF)) | 558644 | I04 Criar e editar rascunho · I05 Enviar, listar e consultar · I06 Ownership e matriz de acesso | [#4](https://github.com/luyz-gusta/Recass-CP2/pull/4), [#5](https://github.com/luyz-gusta/Recass-CP2/pull/5), [#6](https://github.com/luyz-gusta/Recass-CP2/pull/6) |
+| Guilherme Oliveira Santana de Almeida ([@aGuiOliveira](https://github.com/aGuiOliveira)) | 555180 | I07 Aprovar e reprovar · I08 Pagamento e histórico · I09 Testes unitários | [#7](https://github.com/luyz-gusta/Recass-CP2/pull/7), [#8](https://github.com/luyz-gusta/Recass-CP2/pull/8), [#9](https://github.com/luyz-gusta/Recass-CP2/pull/9) |
 
 Cada issue foi implementada numa branch própria e entrou na `main` por pull request com merge commit, preservando a autoria de cada commit. Cada PR cita a issue do repositório original (`Racass/checkpoint-csharpracass-expensehub#N`), descreve as decisões e as evidências e passou pelo workflow `code-quality`.
 
