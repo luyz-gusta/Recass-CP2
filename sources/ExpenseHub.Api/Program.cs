@@ -37,6 +37,7 @@ internal static class Program
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IExpenseRepository, ExpenseRepository>();
         builder.Services.AddScoped<IAccountService, AccountService>();
+        builder.Services.AddScoped<IUserAdminService, UserAdminService>();
 
         builder.Services
             .AddIdentityCore<IdentityUser>(options =>
